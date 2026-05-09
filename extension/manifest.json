@@ -1,15 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "My Pro Video Downloader",
-  "version": "1.0",
-  "description": "تحميل الفيديوهات بضغطة زر عبر سيرفر محلي",
-  "permissions": ["activeTab", "scripting"],
-  "host_permissions": ["<all_urls>"],
+  "name": "GitHub Cloud Downloader",
+  "version": "3.0",
+  "description": "تحميل الفيديوهات عبر GitHub Actions وإرسالها لتليجرام",
+  "permissions": ["activeTab"],
+  "host_permissions": ["https://api.github.com/*", "<all_urls>"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_end"
+      "js": ["content.js"]
     }
   ]
 }
