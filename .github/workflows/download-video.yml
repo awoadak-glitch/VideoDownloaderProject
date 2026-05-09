@@ -1,22 +1,16 @@
-name: Video Downloader Bot
-
+name: Cloud Video Downloader (Telegram)
 on:
   repository_dispatch:
-    types: [download-command] # يتم تفعيله عند استقبال طلب من الإضافة
+    types: [download-command]
 
 jobs:
-  download:
+  download_and_send:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
@@ -24,11 +18,28 @@ jobs:
 
       - name: Download Video
         run: |
-          # هنا سيتم استقبال الرابط من الـ Payload الخاص بالطلب
-          yt-dlp "${{ github.event.client_payload.url }}" -o "downloads/%(title)s.%(ext)s"
+          mkdir -p downloads
+          # تحميل أفضل جودة فيديو وصوت مدمجة (MP4)
+          yt-dlp "${{ github.event.client_payload.url }}" \
+          -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+          --merge-output-format mp4 \
+          -o "downloads/video.mp4"
 
-      - name: Upload Result
-        uses: actions/upload-artifact@v3
-        with:
-          name: downloaded-video
-          path: downloads/
+      - name: Send to Telegram
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # نستخدم كود بايثون بسيط لرفع الملفات الكبيرة لتليجرام لضمان الاستقرار
+          python3 -c "
+          import requests, os
+          bot_token = os.getenv('BOT_TOKEN')
+          chat_id = os.getenv('CHAT_ID')
+          file_path = 'downloads/video.mp4'
+          if os.path.exists(file_path):
+              with open(file_path, 'rb') as f:
+                  r = requests.post(f'https://api.telegram.org/bot{bot_token}/sendVideo', 
+                                  data={'chat_id': chat_id, 'caption': '✅ تم التحميل بنجاح!'}, 
+                                  files={'video': f})
+              print(r.json())
+          "
