@@ -1,49 +1,64 @@
-// وظيفة لإرسال الرابط للسيرفر
-function sendToDownloader(url) {
-    fetch('http://127.0.0.1:5000/download', {
+// --- إعدادات خاصة بك ---
+const GITHUB_USERNAME = "awoadak-glitch"; 
+const REPO_NAME = "VideoDownloaderProject";
+const GITHUB_TOKEN = ""; // التوكن الخاص بك هنا
+
+function sendToGitHub(videoUrl) {
+    const github_api = `https://api.github.com/repos/${GITHUB_USERNAME}/${REPO_NAME}/dispatches`;
+    
+    fetch(github_api, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_url: url })
+        headers: {
+            'Authorization': `Bearer ${GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            event_type: 'download-command',
+            client_payload: { url: videoUrl }
+        })
     })
-    .then(response => response.json())
-    .then(data => alert("✅ تم إرسال الطلب: " + data.message))
-    .catch(error => alert("❌ تأكد من تشغيل سيرفر البايثون أولاً!"));
+    .then(response => {
+        if (response.status === 204) {
+            showNotification("🚀 تم إرسال الطلب لـ GitHub! سيصلك الفيديو على تليجرام.");
+        } else {
+            showNotification("❌ فشل الطلب! تحقق من صلاحيات التوكن.");
+        }
+    })
+    .catch(() => showNotification("❌ خطأ في الاتصال."));
 }
 
-// إنشاء وحقن الزر
-function injectButton() {
-    // نتحقق إذا كان الزر موجوداً مسبقاً لمنع التكرار
-    if (document.getElementById("my-pro-downloader-btn")) return;
-
-    const btn = document.createElement("button");
-    btn.id = "my-pro-downloader-btn";
-    btn.innerHTML = "📥 تحميل هذا الفيديو";
-    
-    // تصميم الزر (CSS)
-    Object.assign(btn.style, {
-        position: "fixed",
-        top: "20px",
-        right: "20px",
-        zIndex: "10000",
-        padding: "10px 15px",
-        backgroundColor: "#ff0000",
-        color: "white",
-        border: "none",
-        borderRadius: "5px",
-        cursor: "pointer",
-        fontWeight: "bold",
-        boxShadow: "0px 4px 6px rgba(0,0,0,0.2)"
+function showNotification(msg) {
+    const note = document.createElement("div");
+    note.innerText = msg;
+    Object.assign(note.style, {
+        position: "fixed", bottom: "30px", left: "30px", zIndex: "10001",
+        backgroundColor: "#1c2128", color: "#adbac7", padding: "12px 25px",
+        borderRadius: "10px", border: "1px solid #444c56", fontSize: "14px",
+        boxShadow: "0 10px 25px rgba(0,0,0,0.5)", fontFamily: "sans-serif"
     });
+    document.body.appendChild(note);
+    setTimeout(() => note.remove(), 5000);
+}
 
-    btn.onclick = () => sendToDownloader(window.location.href);
+function injectBtn() {
+    if (document.getElementById("pro-cloud-dl")) return;
+    const btn = document.createElement("button");
+    btn.id = "pro-cloud-dl";
+    btn.innerHTML = "📥 تحميل سحابي";
+    Object.assign(btn.style, {
+        position: "fixed", top: "20px", right: "20px", zIndex: "9999",
+        padding: "12px 20px", backgroundColor: "#238636", color: "white",
+        border: "none", borderRadius: "8px", cursor: "pointer", 
+        fontWeight: "bold", fontSize: "14px", boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+    });
+    btn.onclick = () => sendToGitHub(window.location.href);
     document.body.appendChild(btn);
 }
 
-// مراقبة الصفحة للتأكد من وجود فيديو
-const observer = new MutationObserver(() => {
+// فحص ذكي لوجود الفيديو
+const checkExist = setInterval(() => {
     if (document.querySelector('video')) {
-        injectButton();
+        injectBtn();
     }
-});
-
-observer.observe(document.body, { childList: true, subtree: true });
+}, 3000);
