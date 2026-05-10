@@ -1,60 +1,59 @@
-name: Video Downloader Pro (Stable Version)
+name: Video Downloader Pro (Anti-Block)
 
 on:
   repository_dispatch:
     types: [download-command]
 
 jobs:
-  download_and_send:
+  download_job:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg jq
-          # تثبيت أحدث نسخة من yt-dlp لتجاوز حظر يوتيوب
+          # تثبيت أحدث نسخة من المحرك لتجاوز التغييرات في المواقع
           pip install -U yt-dlp 
 
-      - name: Download Video
+      - name: Download Processing
         run: |
           mkdir -p downloads
           URL="${{ github.event.client_payload.url }}"
           QUALITY="${{ github.event.client_payload.quality }}"
           
-          # إعداد الجودة (فيديو أو صوت)
+          # إعداد خيارات الجودة
           if [ "$QUALITY" == "mp3" ]; then
             FORMAT="-x --audio-format mp3"
             EXT="mp3"
+          elif [ "$QUALITY" == "720" ]; then
+            FORMAT="-f 'bestvideo[height<=720]+bestaudio/best'"
+            EXT="mp4"
           else
-            FORMAT="-f 'bestvideo[height<=1080]+bestaudio/best'"
+            # الافتراضي: أفضل جودة
+            FORMAT="-f 'bestvideo+bestaudio/best'"
             EXT="mp4"
           fi
 
-          # التحميل مع تمويه الخادم كأنه متصفح عادي
+          # التحميل مع أوامر تجاوز الحماية (التمويه كمتصفح حقيقي)
           yt-dlp $FORMAT \
-          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36" \
           --no-check-certificates \
+          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+          --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+          --add-header "Accept-Language:en-us,en;q=0.5" \
+          --no-playlist \
           -o "downloads/file.$EXT" "$URL"
           
           echo "FILE_EXT=$EXT" >> $GITHUB_ENV
 
       - name: Upload to GoFile (Reliable Link)
-        id: upload
         run: |
-          # نستخدم GoFile كبديل مستقر لـ transfer.sh لإنشاء روابط مباشرة
-          # يرفع الملف ويستخرج رابط التحميل
+          # نستخدم GoFile لأنه أسرع ويدعم أحجام ضخمة
           RESPONSE=$(curl -F "file=@downloads/file.${{ env.FILE_EXT }}" https://store1.gofile.io/uploadFile)
           DOWNLOAD_PAGE=$(echo $RESPONSE | jq -r '.data.downloadPage')
           echo "FINAL_LINK=$DOWNLOAD_PAGE" >> $GITHUB_ENV
 
-      - name: Send to Telegram
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Final Send to Telegram
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-          -d "chat_id=${CHAT_ID}" \
-          -d "text=📥 تم تجهيز الفيديو يا عوض!%0A%0A🚀 رابط التحميل المباشر (مثل سنابتوب):%0A${{ env.FINAL_LINK }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+          -d "text=📥 تم تجهيز الرابط يا عوض!%0A%0A🚀 رابط التحميل المباشر:%0A${{ env.FINAL_LINK }}%0A%0A⚠️ الرابط متاح لمدة 24 ساعة فقط."
