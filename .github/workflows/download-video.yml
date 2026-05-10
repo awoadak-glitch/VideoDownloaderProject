@@ -1,4 +1,4 @@
-name: Cloud Video Downloader (Telegram)
+name: Cloud Video Downloader (Direct Link)
 on:
   repository_dispatch:
     types: [download-command]
@@ -13,33 +13,42 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          pip install yt-dlp
+          sudo apt-get install -y ffmpeg jq
+          pip install -U yt-dlp  # تحديث لضمان تجاوز حماية يوتيوب
 
-      - name: Download Video
+      - name: Download Video (Custom Quality)
         run: |
           mkdir -p downloads
-          # تحميل أفضل جودة فيديو وصوت مدمجة (MP4)
-          yt-dlp "${{ github.event.client_payload.url }}" \
-          -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-          --merge-output-format mp4 \
-          -o "downloads/video.mp4"
+          URL="${{ github.event.client_payload.url }}"
+          QUALITY="${{ github.event.client_payload.quality }}"
+          
+          # اختيار الجودة بناءً على طلبك من الإضافة
+          if [ "$QUALITY" == "mp3" ]; then
+            yt-dlp "$URL" -x --audio-format mp3 -o "downloads/file.mp3"
+            echo "FILE_NAME=file.mp3" >> $GITHUB_ENV
+          elif [ "$QUALITY" == "720" ]; then
+            yt-dlp "$URL" -f "bestvideo[height<=720]+bestaudio/best" --merge-output-format mp4 -o "downloads/file.mp4"
+            echo "FILE_NAME=file.mp4" >> $GITHUB_ENV
+          elif [ "$QUALITY" == "480" ]; then
+            yt-dlp "$URL" -f "bestvideo[height<=480]+bestaudio/best" --merge-output-format mp4 -o "downloads/file.mp4"
+            echo "FILE_NAME=file.mp4" >> $GITHUB_ENV
+          else
+            yt-dlp "$URL" -f "bestvideo+bestaudio/best" --merge-output-format mp4 -o "downloads/file.mp4"
+            echo "FILE_NAME=file.mp4" >> $GITHUB_ENV
+          fi
 
-      - name: Send to Telegram
+      - name: Generate Direct Link
+        id: upload
+        run: |
+          # رفع الملف لخدمة transfer.sh للحصول على رابط مباشر يتجاوز 50 ميجا
+          LINK=$(curl --upload-file downloads/${{ env.FILE_NAME }} https://transfer.sh/${{ env.FILE_NAME }})
+          echo "DIRECT_URL=$LINK" >> $GITHUB_ENV
+
+      - name: Send Link to Telegram
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # نستخدم كود بايثون بسيط لرفع الملفات الكبيرة لتليجرام لضمان الاستقرار
-          python3 -c "
-          import requests, os
-          bot_token = os.getenv('BOT_TOKEN')
-          chat_id = os.getenv('CHAT_ID')
-          file_path = 'downloads/video.mp4'
-          if os.path.exists(file_path):
-              with open(file_path, 'rb') as f:
-                  r = requests.post(f'https://api.telegram.org/bot{bot_token}/sendVideo', 
-                                  data={'chat_id': chat_id, 'caption': '✅ تم التحميل بنجاح!'}, 
-                                  files={'video': f})
-              print(r.json())
-          "
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+          -d "chat_id=${CHAT_ID}" \
+          -d "text=✅ تم تجهيز طلبك يا عوض!%0A%0A🚀 رابط التحميل المباشر (صالح لـ 24 ساعة):%0A${{ env.DIRECT_URL }}"
