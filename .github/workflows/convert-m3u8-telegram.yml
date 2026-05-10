@@ -1,0 +1,59 @@
+name: Convert M3U8 to MP4 and Send Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      m3u8_url:
+        required: true
+        type: string
+      title:
+        required: false
+        default: "video"
+        type: string
+      page_url:
+        required: false
+        default: ""
+        type: string
+      user_agent:
+        required: false
+        default: "Mozilla/5.0"
+        type: string
+      send_telegram:
+        required: false
+        default: "true"
+        type: string
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
+
+      - name: Convert
+        run: |
+          ffmpeg \
+            -headers "Referer: ${{ inputs.page_url }}" \
+            -allowed_extensions ALL \
+            -protocol_whitelist "file,http,https,tcp,tls,crypto" \
+            -i "${{ inputs.m3u8_url }}" \
+            -c copy \
+            output.mp4
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-mp4
+          path: output.mp4
+
+      - name: Send Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            -F "document=@output.mp4"
