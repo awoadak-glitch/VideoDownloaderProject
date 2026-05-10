@@ -1,4 +1,4 @@
-name: Video Downloader Pro (Snaptube Mode)
+name: Snaptube Engine Pro
 
 on:
   repository_dispatch:
@@ -8,55 +8,45 @@ jobs:
   download_job:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Advanced Tools
+      - name: Install Essentials
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg jq
-          # تثبيت نسخة خاصة ومحدثة جداً من المحرك
-          pip install -U yt-dlp 
+          curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
 
-      - name: Snaptube Simulation Download
+      - name: Smart Download
         run: |
           mkdir -p downloads
           URL="${{ github.event.client_payload.url }}"
           QUALITY="${{ github.event.client_payload.quality }}"
           
-          # إعداد الجودة
+          # اختيار الجودة الذكي
           if [ "$QUALITY" == "mp3" ]; then
-            FORMAT="-x --audio-format mp3"
-            EXT="mp3"
+            OPTS="-x --audio-format mp3"
           elif [ "$QUALITY" == "720" ]; then
-            FORMAT="-f 'bestvideo[height<=720]+bestaudio/best'"
-            EXT="mp4"
+            OPTS="-f 'bestvideo[height<=720]+bestaudio/best'"
           else
-            FORMAT="-f 'bestvideo+bestaudio/best'"
-            EXT="mp4"
+            OPTS="-f 'bestvideo+bestaudio/best'"
           fi
 
-          # السر هنا: استخدام --impersonate لتزييف هوية المتصفح بالكامل
-          # وإضافة ثغرة الانتظار العشوائي لتبدو كإنسان
-          yt-dlp $FORMAT \
-          --impersonate "chrome" \
-          --sleep-requests 1 \
-          --random-user-agent \
+          # التحميل باستخدام محاكاة المتصفح (بدون أوامر مسببة للمشاكل)
+          yt-dlp $OPTS \
+          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
           --no-check-certificates \
-          --no-playlist \
-          -o "downloads/file.$EXT" "$URL"
+          -o "downloads/file.%(ext)s" "$URL"
           
-          echo "FILE_EXT=$EXT" >> $GITHUB_ENV
+          echo "EXT=$(ls downloads/ | sed 's/.*\.//')" >> $GITHUB_ENV
 
-      - name: Direct Cloud Upload
+      - name: Cloud Link Generation
         run: |
-          # استخدام GoFile لضمان عدم وجود قيود حجم (مثل سنابتوب)
-          RESPONSE=$(curl -F "file=@downloads/file.${{ env.FILE_EXT }}" https://store1.gofile.io/uploadFile)
-          DOWNLOAD_URL=$(echo $RESPONSE | jq -r '.data.downloadPage')
-          echo "FINAL_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+          # رفع الملف والحصول على رابط مباشر لتجاوز حد الـ 50MB
+          FILE_PATH=$(ls downloads/file.*)
+          LINK=$(curl --upload-file "$FILE_PATH" https://transfer.sh/snaptube_file.${{ env.EXT }})
+          echo "FINAL_LINK=$LINK" >> $GITHUB_ENV
 
-      - name: Notify Awadh via Telegram
+      - name: Telegram Notification
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d "text=🚀 تم التحميل بنظام سنابتوب!%0A%0A📦 طلبك جاهز يا عوض:%0A${{ env.FINAL_URL }}%0A%0A⚠️ ملاحظة: هذا الرابط يتجاوز حظر تليجرام."
+          -d "text=🚀 تم التحميل بنجاح!%0A%0A📦 الرابط المباشر (سنابتوب مود):%0A${{ env.FINAL_LINK }}"
