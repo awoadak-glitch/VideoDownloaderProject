@@ -1,4 +1,4 @@
-name: Snaptube Master Mode
+name: Video Downloader Pro (Anti-Block)
 
 on:
   repository_dispatch:
@@ -8,46 +8,52 @@ jobs:
   download_job:
     runs-on: ubuntu-latest
     steps:
-      - name: Install Essentials
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg jq
-          curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
+          # تثبيت أحدث نسخة من المحرك لتجاوز التغييرات في المواقع
+          pip install -U yt-dlp 
 
-      - name: Flexible Download
+      - name: Download Processing
         run: |
           mkdir -p downloads
           URL="${{ github.event.client_payload.url }}"
           QUALITY="${{ github.event.client_payload.quality }}"
           
-          # اختيار ذكي للتنسيق لتجنب خطأ "Requested format is not available"
+          # إعداد خيارات الجودة
           if [ "$QUALITY" == "mp3" ]; then
-            OPTS="-x --audio-format mp3"
+            FORMAT="-x --audio-format mp3"
+            EXT="mp3"
           elif [ "$QUALITY" == "720" ]; then
-            OPTS="-f 'bestvideo[height<=720]+bestaudio/best'"
+            FORMAT="-f 'bestvideo[height<=720]+bestaudio/best'"
+            EXT="mp4"
           else
-            # محاولة جلب أفضل جودة متاحة تلقائياً
-            OPTS="-f 'best'"
+            # الافتراضي: أفضل جودة
+            FORMAT="-f 'bestvideo+bestaudio/best'"
+            EXT="mp4"
           fi
 
-          yt-dlp $OPTS \
-          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+          # التحميل مع أوامر تجاوز الحماية (التمويه كمتصفح حقيقي)
+          yt-dlp $FORMAT \
           --no-check-certificates \
-          -o "downloads/file.%(ext)s" "$URL"
+          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+          --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+          --add-header "Accept-Language:en-us,en;q=0.5" \
+          --no-playlist \
+          -o "downloads/file.$EXT" "$URL"
           
-          echo "EXT=$(ls downloads/ | sed 's/.*\.//')" >> $GITHUB_ENV
+          echo "FILE_EXT=$EXT" >> $GITHUB_ENV
 
-      - name: Cloud Upload
+      - name: Upload to GoFile (Reliable Link)
         run: |
-          FILE_PATH=$(ls downloads/file.*)
-          # استخدام GoFile بدلاً من transfer.sh لثبات أكثر
-          RESPONSE=$(curl -F "file=@$FILE_PATH" https://store1.gofile.io/uploadFile)
-          LINK=$(echo $RESPONSE | jq -r '.data.downloadPage')
-          echo "FINAL_LINK=$LINK" >> $GITHUB_ENV
+          # نستخدم GoFile لأنه أسرع ويدعم أحجام ضخمة
+          RESPONSE=$(curl -F "file=@downloads/file.${{ env.FILE_EXT }}" https://store1.gofile.io/uploadFile)
+          DOWNLOAD_PAGE=$(echo $RESPONSE | jq -r '.data.downloadPage')
+          echo "FINAL_LINK=$DOWNLOAD_PAGE" >> $GITHUB_ENV
 
-      - name: Telegram Notification
+      - name: Final Send to Telegram
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d "text=✅ جاهز يا عوض!%0A%0A🚀 رابط التحميل المباشر:%0A${{ env.FINAL_LINK }}"
+          -d "text=📥 تم تجهيز الرابط يا عوض!%0A%0A🚀 رابط التحميل المباشر:%0A${{ env.FINAL_LINK }}%0A%0A⚠️ الرابط متاح لمدة 24 ساعة فقط."
