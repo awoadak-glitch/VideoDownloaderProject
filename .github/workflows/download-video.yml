@@ -1,4 +1,4 @@
-name: Video Downloader Pro (Anti-Block)
+name: Video Downloader Pro (Quality Select)
 
 on:
   repository_dispatch:
@@ -8,52 +8,53 @@ jobs:
   download_job:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg jq
-          # تثبيت أحدث نسخة من المحرك لتجاوز التغييرات في المواقع
-          pip install -U yt-dlp 
+          pip install -U yt-dlp
 
-      - name: Download Processing
+      - name: Download Video
         run: |
           mkdir -p downloads
           URL="${{ github.event.client_payload.url }}"
           QUALITY="${{ github.event.client_payload.quality }}"
           
-          # إعداد خيارات الجودة
+          # فحص الجودة المطلوبة من الإضافة
           if [ "$QUALITY" == "mp3" ]; then
-            FORMAT="-x --audio-format mp3"
-            EXT="mp3"
+            # تحميل صوت فقط
+            yt-dlp "$URL" -x --audio-format mp3 -o "downloads/file.mp3"
+            echo "FILE_EXT=mp3" >> $GITHUB_ENV
           elif [ "$QUALITY" == "720" ]; then
-            FORMAT="-f 'bestvideo[height<=720]+bestaudio/best'"
-            EXT="mp4"
+            # تحميل جودة 720p
+            yt-dlp "$URL" -f "bestvideo[height<=720]+bestaudio/best" --merge-output-format mp4 -o "downloads/file.mp4"
+            echo "FILE_EXT=mp4" >> $GITHUB_ENV
+          elif [ "$QUALITY" == "480" ]; then
+            # تحميل جودة 480p
+            yt-dlp "$URL" -f "bestvideo[height<=480]+bestaudio/best" --merge-output-format mp4 -o "downloads/file.mp4"
+            echo "FILE_EXT=mp4" >> $GITHUB_ENV
           else
-            # الافتراضي: أفضل جودة
-            FORMAT="-f 'bestvideo+bestaudio/best'"
-            EXT="mp4"
+            # الافتراضي: أفضل جودة فيديو متاحة (التي كانت تنجح معك)
+            yt-dlp "$URL" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 -o "downloads/file.mp4"
+            echo "FILE_EXT=mp4" >> $GITHUB_ENV
           fi
 
-          # التحميل مع أوامر تجاوز الحماية (التمويه كمتصفح حقيقي)
-          yt-dlp $FORMAT \
-          --no-check-certificates \
-          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
-          --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-          --add-header "Accept-Language:en-us,en;q=0.5" \
-          --no-playlist \
-          -o "downloads/file.$EXT" "$URL"
-          
-          echo "FILE_EXT=$EXT" >> $GITHUB_ENV
-
-      - name: Upload to GoFile (Reliable Link)
+      - name: Upload to GoFile (Direct Link)
+        id: upload
         run: |
-          # نستخدم GoFile لأنه أسرع ويدعم أحجام ضخمة
+          # رفع الملف لإنشاء رابط تحميل مباشر يتجاوز حد الـ 50 ميجا الخاص بتليجرام
           RESPONSE=$(curl -F "file=@downloads/file.${{ env.FILE_EXT }}" https://store1.gofile.io/uploadFile)
-          DOWNLOAD_PAGE=$(echo $RESPONSE | jq -r '.data.downloadPage')
-          echo "FINAL_LINK=$DOWNLOAD_PAGE" >> $GITHUB_ENV
+          DOWNLOAD_LINK=$(echo $RESPONSE | jq -r '.data.downloadPage')
+          echo "FINAL_URL=$DOWNLOAD_LINK" >> $GITHUB_ENV
 
-      - name: Final Send to Telegram
+      - name: Send to Telegram
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d "text=📥 تم تجهيز الرابط يا عوض!%0A%0A🚀 رابط التحميل المباشر:%0A${{ env.FINAL_LINK }}%0A%0A⚠️ الرابط متاح لمدة 24 ساعة فقط."
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+          -d "chat_id=${CHAT_ID}" \
+          -d "text=✅ تم التحميل بالجودة المطلوبة!%0A%0A🚀 رابط التحميل المباشر:%0A${{ env.FINAL_URL }}"
