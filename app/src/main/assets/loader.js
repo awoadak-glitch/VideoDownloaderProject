@@ -1,55 +1,74 @@
-(function() {
-  if (window.__AWR_STUDIO_LOADER__) return;
-  window.__AWR_STUDIO_LOADER__ = true;
+(function(){
+ if(window.__AWR_ULTRA_CARDS__)return; window.__AWR_ULTRA_CARDS__=true;
 
-  function isMedia(u) {
-    if (!u) return false;
-    u = String(u);
-    return u.includes(".mp4") || u.includes(".m3u8") || u.includes(".mpd") ||
-           u.includes(".webm") || u.includes("videoplayback") || u.includes("mime=video");
-  }
+ function isMedia(u){
+   u=String(u||"");
+   return u.includes(".mp4")||u.includes(".m3u8")||u.includes(".mpd")||
+          u.includes(".webm")||u.includes("videoplayback")||
+          u.includes("mime=video")||u.includes("mime=audio");
+ }
 
-  function send(url, source) {
-    try {
-      if (!isMedia(url)) return;
-      window.AWRBridge.onMediaFound(JSON.stringify({
-        url: String(url),
-        source: source || "js",
-        title: document.title || "video",
-        page: location.href
-      }));
-    } catch(e) {}
-  }
+ function getMeta(){
+   var v=document.querySelector("video");
+   var thumb=(document.querySelector('meta[property="og:image"]')||{}).content ||
+             (document.querySelector('meta[name="twitter:image"]')||{}).content ||
+             (v&&v.poster) || "";
+   var title=(document.querySelector('meta[property="og:title"]')||{}).content ||
+             (document.querySelector('meta[name="twitter:title"]')||{}).content ||
+             document.title || "video";
+   var duration="";
+   try{
+     if(v && isFinite(v.duration) && v.duration>0){
+       var sec=Math.floor(v.duration);
+       var m=Math.floor(sec/60);
+       var s=sec%60;
+       duration=m+":"+(s<10?"0"+s:s);
+     }
+   }catch(e){}
+   return {title:title,thumb:thumb,page:location.href,duration:duration};
+ }
 
-  function scan() {
-    try {
-      document.querySelectorAll("video,source").forEach(function(v) {
-        send(v.currentSrc, "video.currentSrc");
-        send(v.src, "video.src");
-      });
-      document.querySelectorAll("a[href]").forEach(function(a) { send(a.href, "link"); });
-      performance.getEntriesByType("resource").forEach(function(r) { send(r.name, "performance"); });
-    } catch(e) {}
-  }
+ function send(u,s){
+   try{
+     if(!isMedia(u))return;
+     var m=getMeta();
+     window.AWRBridge.onMediaFound(JSON.stringify({
+       url:String(u), source:s||"js", title:m.title, page:m.page,
+       thumbnail:m.thumb, duration:m.duration
+     }));
+   }catch(e){}
+ }
 
-  var oldFetch = window.fetch;
-  if (oldFetch) {
-    window.fetch = function(input, init) {
-      var url = typeof input === "string" ? input : (input && input.url);
-      send(url, "fetch");
-      return oldFetch.apply(this, arguments).then(function(res) {
-        try { send(res.url, "fetch.response"); } catch(e) {}
-        return res;
-      });
-    };
-  }
+ function scan(){
+   try{
+     document.querySelectorAll("video,source,a[href]").forEach(function(v){
+       send(v.currentSrc,"video");
+       send(v.src,"video");
+       send(v.href,"link");
+     });
+     performance.getEntriesByType("resource").forEach(function(r){
+       send(r.name,"resource");
+     });
+   }catch(e){}
+ }
 
-  var oldOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function(method, url) {
-    send(url, "xhr");
-    return oldOpen.apply(this, arguments);
-  };
+ var f=window.fetch;
+ if(f){
+   window.fetch=function(i,n){
+     send(typeof i==="string"?i:i&&i.url,"fetch");
+     return f.apply(this,arguments).then(function(r){
+       send(r.url,"fetch");
+       return r;
+     });
+   };
+ }
 
-  scan();
-  setInterval(scan, 1800);
+ var o=XMLHttpRequest.prototype.open;
+ XMLHttpRequest.prototype.open=function(m,u){
+   send(u,"xhr");
+   return o.apply(this,arguments);
+ };
+
+ scan();
+ setInterval(scan,1500);
 })();
