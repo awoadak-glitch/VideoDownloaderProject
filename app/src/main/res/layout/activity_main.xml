@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="14dp"
+        android:background="@color/bg">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="AWR Downloader Studio"
+            android:textColor="@color/text"
+            android:textSize="20sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/mediaCounter"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:gravity="center"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:background="@drawable/panel_bg"
+            android:text="0 found"
+            android:textColor="@color/muted"
+            android:textSize="13sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/homePage"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="160dp"
+            android:background="@drawable/panel_bg"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Smart Web Media Capture"
+                android:textColor="@color/text"
+                android:textSize="24sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="WebView + JS Bridge + request interceptor + local download manager. Built for your own media workflows."
+                android:textColor="@color/muted"
+                android:textSize="14sp"/>
+
+            <Button
+                android:id="@+id/startBrowserBtn"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/gradient_button"
+                android:text="Open Browser"
+                android:textColor="@color/text"/>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Sections"
+            android:textColor="@color/text"
+            android:textSize="18sp"
+            android:textStyle="bold"/>
+
+        <Button
+            android:id="@+id/homeToDownloadsBtn"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/panel_bg"
+            android:text="Downloads Manager"
+            android:textColor="@color/text"/>
+
+        <Button
+            android:id="@+id/homeToDetectedBtn"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/panel_bg"
+            android:text="Detected Media"
+            android:textColor="@color/text"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/browserPage"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="58dp"
+            android:orientation="horizontal"
+            android:padding="8dp">
+
+            <EditText
+                android:id="@+id/urlBox"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:singleLine="true"
+                android:textColor="@color/text"
+                android:textColorHint="@color/muted"
+                android:hint="https://"
+                android:background="@drawable/input_bg"
+                android:padding="12dp"/>
+
+            <Button
+                android:id="@+id/goBtn"
+                android:layout_width="72dp"
+                android:layout_height="match_parent"
+                android:layout_marginLeft="8dp"
+                android:background="@drawable/gradient_button"
+                android:text="Go"
+                android:textColor="@color/text"/>
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <WebView
+                android:id="@+id/webView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
+
+            <Button
+                android:id="@+id/downloadFloat"
+                android:layout_width="wrap_content"
+                android:layout_height="52dp"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="18dp"
+                android:background="@drawable/gradient_button"
+                android:text="⬇ 0"
+                android:textColor="@color/text"/>
+        </FrameLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/downloadsPage"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Downloads"
+            android:textColor="@color/text"
+            android:textSize="24sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/downloadsText"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/panel_bg"
+            android:padding="16dp"
+            android:text="No downloads yet."
+            android:textColor="@color/muted"
+            android:textSize="14sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/detectedPage"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Detected Media"
+            android:textColor="@color/text"
+            android:textSize="24sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/detectedText"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/panel_bg"
+            android:padding="16dp"
+            android:text="Nothing detected yet."
+            android:textColor="@color/muted"
+            android:textSize="13sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:background="#081220">
+
+        <Button
+            android:id="@+id/navHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Home"/>
+
+        <Button
+            android:id="@+id/navBrowser"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="WebView"/>
+
+        <Button
+            android:id="@+id/navDetected"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Media"/>
+
+        <Button
+            android:id="@+id/navDownloads"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Files"/>
+    </LinearLayout>
+
+</LinearLayout>
