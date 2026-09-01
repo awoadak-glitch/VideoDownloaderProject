@@ -39,4 +39,5 @@ android {
 
 dependencies {
     implementation("network.mysterium.openvpn:icsopenvpn:0.7.55-myst")
+    implementation("androidx.core:core-ktx:1.13.1")
 }
