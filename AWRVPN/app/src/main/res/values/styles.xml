@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.AWRVPN" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#47F3C6</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#050810</item>
+        <item name="android:navigationBarColor">#050810</item>
+        <item name="android:windowBackground">#050810</item>
+    </style>
+</resources>

@@ -1,0 +1,125 @@
+                syncUi()
+            }
+        }
+    }
+
+    override fun onServer() {
+        if (!vip.isVip()) {
+            showVipDialog()
+            return
+        }
+        if (servers.isEmpty()) loadCatalog(true) else showServerDialog()
+    }
+
+    private fun loadCatalog(showAfter: Boolean) {
+        if (!vip.isVip()) return
+        surface.loadingRepository = true
+        surface.invalidate()
+        Thread {
+            try {
+                val list = ServerRepository.list(vip.key(), protocol)
+                runOnUiThread {
+                    surface.loadingRepository = false
+                    servers = list
+                    if (selected == null || list.none { it.id == selected?.id }) selected = list.firstOrNull()
+                    syncUi()
+                    if (showAfter) {
+                        if (list.isEmpty()) fail("No servers are available for ${protocol.label}")
+                        else showServerDialog()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    surface.loadingRepository = false
+                    val msg = e.message ?: "Repository unavailable"
+                    if (msg == "VIP_REQUIRED") {
+                        vip.clear()
+                        servers = emptyList()
+                        selected = null
+                        syncUi()
+                        showVipDialog()
+                    } else fail(msg)
+                }
+            }
+        }.start()
+    }
+
+    override fun onVip() = showVipDialog()
+
+    override fun onProtocol() {
+        val values = ProtocolMode.values()
+        val dialog = styledDialog("CONNECTION PROTOCOL", "Choose how AWR negotiates the secure tunnel")
+        val box = dialog.second
+        values.forEach { p ->
+            box.addView(optionRow(p.label, when (p) {
+                ProtocolMode.AUTO -> "Automatic • recommended"
+                ProtocolMode.UDP -> "Lowest latency when available"
+                ProtocolMode.TCP -> "More resilient on restrictive networks"
+            }, p == protocol) {
+                protocol = p
+                servers = emptyList()
+                selected = null
+                dialog.first.dismiss()
+                syncUi()
+                if (vip.isVip()) loadCatalog(false)
+            })
+        }
+        dialog.first.show()
+    }
+
+    override fun onSettings() = showSettingsDialog()
+
+    private fun showVipDialog() {
+        val d = Dialog(this)
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(24), dp(24), dp(22))
+            background = rounded(Color.rgb(10, 19, 31), 28f, Color.rgb(50, 77, 94), 1)
+        }
+
+        shell.addView(TextView(this).apply {
+            text = "✦  AWR VIP"
+            textSize = 27f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        })
+        shell.addView(TextView(this).apply {
+            text = if (vip.isVip()) "Your secure server vault is unlocked." else "Unlock the private VPN repository. Server IPs and profiles never leave the vault without a valid VIP subscription."
+            textSize = 14f
+            setTextColor(Color.rgb(157, 177, 194))
+            setPadding(0, dp(9), 0, dp(18))
+        })
+
+        if (vip.isVip()) {
+            shell.addView(glassInfo("VIP STATUS", "ACTIVE", Color.rgb(71, 243, 198)))
+            vip.expires()?.let { shell.addView(glassInfo("EXPIRES", it.take(10), Color.WHITE)) }
+            shell.addView(actionButton("CLOSE", Color.rgb(71, 243, 198), Color.rgb(5, 12, 19)) { d.dismiss() })
+            shell.addView(TextView(this).apply {
+                text = "Deactivate this VIP on this device"
+                gravity = Gravity.CENTER
+                textSize = 12f
+                setTextColor(Color.rgb(120, 138, 154))
+                setPadding(0, dp(16), 0, 0)
+                setOnClickListener {
+                    vip.clear(); servers = emptyList(); selected = null; d.dismiss(); syncUi()
+                }
+            })
+        } else {
+            val input = EditText(this).apply {
+                hint = "AWR-XXXX-XXXX-XXXX"
+                setHintTextColor(Color.rgb(91, 113, 130))
+                setTextColor(Color.WHITE)
+                textSize = 16f
+                isSingleLine = true
+                inputType = InputType.TYPE_CLASS_TEXT
+                setPadding(dp(18), dp(15), dp(18), dp(15))
+                background = rounded(Color.rgb(7, 14, 24), 16f, Color.rgb(38, 62, 79), 1)
+            }
+            shell.addView(input, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(13) })
+
+            val status = TextView(this).apply {
+                textSize = 13f
+                setTextColor(Color.rgb(157, 177, 194))
+                visibility = View.GONE
+                setPadding(dp(4), dp(2), dp(4), dp(12))
