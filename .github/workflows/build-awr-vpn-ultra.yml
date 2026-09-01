@@ -26,6 +26,7 @@ jobs:
         run: |
           cat AWRVPN/ultra2_bundle.part* | base64 -d > /tmp/awr-ultra2.tar.gz
           tar -xzf /tmp/awr-ultra2.tar.gz -C AWRVPN
+          sed -i 's/singleLine = true/setSingleLine(true)/' AWRVPN/app/src/main/java/com/awr/vpn/MainActivity.kt
           test -f AWRVPN/app/src/main/java/com/awr/vpn/MainActivity.kt
           test -f AWRVPN/app/src/main/java/com/awr/vpn/ConnectionControl.kt
           test -f AWRVPN/app/src/main/java/com/awr/vpn/SmartRouter.kt
