@@ -34,7 +34,8 @@ data class ServerInfo(
     val ping: Int,
     val speedBps: Long,
     val sessions: Int,
-    val protocol: String
+    val protocol: String,
+    val score: Long = 0L
 )
 
 data class VpnProfileData(
@@ -120,7 +121,7 @@ object ServerRepository {
         conn.readTimeout = 22000
         conn.setRequestProperty("Accept", "application/json")
         conn.setRequestProperty("X-AWR-VIP", vipKey)
-        conn.setRequestProperty("User-Agent", "AWR-VPN-Android/1.0")
+        conn.setRequestProperty("User-Agent", "AWR-VPN-Android/2.0")
         return conn
     }
 
@@ -152,7 +153,8 @@ object ServerRepository {
                 ping = x.optInt("ping", 0),
                 speedBps = x.optLong("speed_bps", 0L),
                 sessions = x.optInt("sessions", 0),
-                protocol = x.optString("protocol", "auto")
+                protocol = x.optString("protocol", "auto"),
+                score = x.optLong("score", 0L)
             )
         }
         return out
@@ -172,8 +174,9 @@ object ServerRepository {
             flag = s.optString("flag", server.flag),
             ping = s.optInt("ping", server.ping),
             speedBps = s.optLong("speed_bps", server.speedBps),
-            sessions = server.sessions,
-            protocol = s.optString("protocol", server.protocol)
+            sessions = s.optInt("sessions", server.sessions),
+            protocol = s.optString("protocol", server.protocol),
+            score = s.optLong("score", server.score)
         )
         var cfg = obj.getString("ovpn").trim()
         cfg += "\ndhcp-option DNS ${dns.d1}\ndhcp-option DNS ${dns.d2}\n"
@@ -191,6 +194,8 @@ class VpnEngine(private val context: Context) {
         val profile = parser.convertProfile()
         profile.mName = "AWR • ${data.server.country}"
         profile.mUserEditable = false
+        profile.mPersistTun = true
+        profile.mBlockUnusedAddressFamilies = true
         ProfileManager.setTemporaryProfile(context, profile)
         pendingProfile = profile
         return VpnService.prepare(context)
