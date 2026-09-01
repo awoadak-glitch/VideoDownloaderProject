@@ -57,8 +57,14 @@ class ConnectionStore(context: Context) {
     }
 
     fun autoBest(): Boolean = prefs.getBoolean("auto_best", true)
-    fun setConnected(value: Boolean) = prefs.edit().putBoolean("connected", value).apply()
+    fun setConnected(value: Boolean) {
+        val e = prefs.edit().putBoolean("connected", value)
+        if (value && prefs.getLong("connected_at", 0L) <= 0L) e.putLong("connected_at", System.currentTimeMillis())
+        if (!value) e.putLong("connected_at", 0L)
+        e.apply()
+    }
     fun wasConnected(): Boolean = prefs.getBoolean("connected", false)
+    fun connectedAt(): Long = prefs.getLong("connected_at", 0L)
 
     fun saveProtocol(value: ProtocolMode) = prefs.edit().putString("protocol", value.name).apply()
     fun protocol(): ProtocolMode = try {
