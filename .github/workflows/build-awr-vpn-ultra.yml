@@ -22,12 +22,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Verify AWR VPN Ultra 2 sources
+      - name: Verify and finalize AWR VPN Ultra 2 sources
         run: |
           test -f AWRVPN/app/src/main/java/com/awr/vpn/UltraMainActivity.kt
           test -f AWRVPN/app/src/main/java/com/awr/vpn/UltraSurface.kt
           test -f AWRVPN/app/src/main/java/com/awr/vpn/UltraState.kt
           test -f AWRVPN/app/src/main/java/com/awr/vpn/ModelsNetwork.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('AWRVPN/app/src/main/java/com/awr/vpn/UltraMainActivity.kt')
+          s = p.read_text()
+          old = 'override fun updateState(state: String?, logmessage: String?, localizedResId: Int, level: ConnectionStatus?) {'
+          new = 'override fun updateState(state: String?, logmessage: String?, localizedResId: Int, level: ConnectionStatus?, intent: Intent?) {'
+          if old in s:
+              s = s.replace(old, new)
+          if new not in s:
+              raise SystemExit('StateListener signature not found')
+          p.write_text(s)
+          PY
       - name: Build AWR VPN Ultra 2
         working-directory: AWRVPN
         run: gradle :app:assembleDebug --stacktrace
