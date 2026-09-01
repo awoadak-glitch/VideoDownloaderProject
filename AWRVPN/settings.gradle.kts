@@ -12,6 +12,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven(url = "https://jitpack.io")
+        maven(url = "https://raw.githubusercontent.com/mysteriumnetwork/openvpn_dart/master/android/localmaven")
     }
 }
 rootProject.name = "AWRVPNUltra"
