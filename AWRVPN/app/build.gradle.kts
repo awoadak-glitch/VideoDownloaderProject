@@ -5,14 +5,14 @@ plugins {
 
 android {
     namespace = "com.awr.vpn"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.awr.vpn"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.0-ultra"
+        targetSdk = 35
+        versionCode = 3
+        versionName = "1.0.1-ultra"
         multiDexEnabled = true
     }
 
@@ -38,5 +38,5 @@ android {
 }
 
 dependencies {
-    implementation("com.github.schwabe:ics-openvpn:v0.6.73-production")
+    implementation("network.mysterium.openvpn:icsopenvpn:0.7.55-myst")
 }
