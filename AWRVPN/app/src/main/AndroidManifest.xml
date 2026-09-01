@@ -5,18 +5,23 @@
 
     <application
         android:allowBackup="false"
-        android:label="AWR VPN"
+        android:label="AWR VPN ULTRA"
         android:theme="@style/Theme.AWRVPN"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true">
         <activity
-            android:name=".MainActivity"
+            android:name=".UltraMainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".AwrVpnActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>
