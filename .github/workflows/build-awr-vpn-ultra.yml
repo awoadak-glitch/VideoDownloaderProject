@@ -2,7 +2,10 @@ name: Build AWR VPN Ultra
 
 on:
   push:
-    branches: [ awr-vpn-ultra ]
+    branches: [ main, awr-vpn-ultra ]
+    paths:
+      - 'AWRVPN/**'
+      - '.github/workflows/build-awr-vpn-ultra.yml'
   workflow_dispatch:
 
 jobs:
