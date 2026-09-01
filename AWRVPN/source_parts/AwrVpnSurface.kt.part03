@@ -1,0 +1,53 @@
+        settingsHit.set(bar.left + cell * 3, bar.top, bar.right, bar.bottom)
+    }
+
+    private fun drawPowerIcon(c: Canvas, cx: Float, cy: Float, color: Int) {
+        stroke.color = color
+        stroke.strokeWidth = d(4.2f)
+        stroke.strokeCap = Paint.Cap.ROUND
+        val r = d(19f)
+        val rect = RectF(cx - r, cy - r, cx + r, cy + r)
+        c.drawArc(rect, -50f, 280f, false, stroke)
+        c.drawLine(cx, cy - d(28f), cx, cy - d(5f), stroke)
+        stroke.strokeCap = Paint.Cap.BUTT
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_UP) {
+            val x = event.x
+            val y = event.y
+            when {
+                connectHit.contains(x, y) -> actions.onConnect()
+                vipHit.contains(x, y) -> actions.onVip()
+                serverHit.contains(x, y) -> actions.onServer()
+                protocolHit.contains(x, y) -> actions.onProtocol()
+                settingsHit.contains(x, y) -> actions.onSettings()
+                y > height - d(78f) && x in (width / 4f * 1f)..(width / 4f * 2f) -> actions.onServer()
+                y > height - d(78f) && x in (width / 4f * 2f)..(width / 4f * 3f) -> actions.onVip()
+            }
+            performClick()
+        }
+        return true
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    private fun lighten(color: Int, f: Float): Int {
+        return Color.rgb(
+            (Color.red(color) + (255 - Color.red(color)) * f).toInt().coerceIn(0, 255),
+            (Color.green(color) + (255 - Color.green(color)) * f).toInt().coerceIn(0, 255),
+            (Color.blue(color) + (255 - Color.blue(color)) * f).toInt().coerceIn(0, 255)
+        )
+    }
+
+    private fun darken(color: Int, f: Float): Int {
+        return Color.rgb(
+            (Color.red(color) * (1f - f)).toInt().coerceIn(0, 255),
+            (Color.green(color) * (1f - f)).toInt().coerceIn(0, 255),
+            (Color.blue(color) * (1f - f)).toInt().coerceIn(0, 255)
+        )
+    }
+}

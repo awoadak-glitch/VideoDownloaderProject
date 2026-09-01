@@ -1,0 +1,107 @@
+            }
+            shell.addView(status)
+            val activate = actionButton("ACTIVATE VIP", Color.rgb(71, 243, 198), Color.rgb(5, 12, 19)) {
+                val code = input.text.toString().trim()
+                if (code.isBlank()) {
+                    status.visibility = View.VISIBLE
+                    status.text = "Enter your AWR VIP code."
+                    status.setTextColor(Color.rgb(255, 125, 130))
+                } else {
+                    status.visibility = View.VISIBLE
+                    status.text = "Verifying secure access…"
+                    status.setTextColor(Color.rgb(157, 177, 194))
+                    input.isEnabled = false
+                    Thread {
+                        val result = AwrApi.verifyVip(code)
+                        runOnUiThread {
+                            input.isEnabled = true
+                            if (result.valid) {
+                                vip.save(code, result.expiresAt)
+                                status.text = "VIP VERIFIED • SERVER VAULT UNLOCKED"
+                                status.setTextColor(Color.rgb(71, 243, 198))
+                                syncUi()
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    d.dismiss()
+                                    loadCatalog(false)
+                                }, 650)
+                            } else {
+                                status.text = result.message
+                                status.setTextColor(Color.rgb(255, 125, 130))
+                            }
+                        }
+                    }.start()
+                }
+            }
+            shell.addView(activate)
+        }
+
+        d.setContentView(shell)
+        d.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.78f }
+            setLayout((resources.displayMetrics.widthPixels * .91f).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
+        }
+        d.setOnShowListener {
+            d.window?.setLayout((resources.displayMetrics.widthPixels * .91f).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
+        }
+        d.show()
+    }
+
+    private fun showServerDialog() {
+        val d = Dialog(this)
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(22), dp(18), dp(16))
+            background = rounded(Color.rgb(8, 16, 28), 28f, Color.rgb(42, 69, 87), 1)
+        }
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        titleRow.addView(TextView(this).apply {
+            text = "SERVER VAULT"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        titleRow.addView(TextView(this).apply {
+            text = "${servers.size} LIVE"
+            textSize = 11f
+            setTextColor(Color.rgb(71, 243, 198))
+            setPadding(dp(11), dp(7), dp(11), dp(7))
+            background = rounded(Color.argb(40, 71, 243, 198), 50f, Color.argb(90, 71, 243, 198), 1)
+        })
+        outer.addView(titleRow)
+        outer.addView(TextView(this).apply {
+            text = "Every profile below was released only after AWR-VIP authorization."
+            textSize = 13f
+            setTextColor(Color.rgb(142, 163, 180))
+            setPadding(0, dp(6), 0, dp(14))
+        })
+
+        val scroll = ScrollView(this)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val grouped = servers.groupBy { it.country }.toList().sortedBy { it.first }
+        grouped.forEach { (country, group) ->
+            list.addView(TextView(this).apply {
+                text = "${group.firstOrNull()?.flag ?: "🌐"}  ${country.uppercase(Locale.US)}"
+                textSize = 12f
+                setTextColor(Color.rgb(112, 137, 155))
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                setPadding(dp(4), dp(14), dp(4), dp(7))
+            })
+            group.take(5).forEach { server ->
+                list.addView(serverRow(server, selected?.id == server.id) {
+                    selected = server
+                    d.dismiss()
+                    syncUi()
+                })
+            }
+        }
+        scroll.addView(list)
+        outer.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        d.setContentView(outer)
+        d.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = .82f }

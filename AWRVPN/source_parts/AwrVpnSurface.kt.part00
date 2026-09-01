@@ -1,0 +1,138 @@
+package com.awr.vpn
+
+import android.animation.ValueAnimator
+import android.content.Context
+import android.graphics.*
+import android.view.MotionEvent
+import android.view.View
+import android.view.animation.LinearInterpolator
+import java.text.DecimalFormat
+import kotlin.math.*
+
+class AwrVpnSurface(context: Context, private val actions: Actions) : View(context) {
+    interface Actions {
+        fun onConnect()
+        fun onServer()
+        fun onVip()
+        fun onProtocol()
+        fun onSettings()
+    }
+
+    data class UiState(
+        val vip: Boolean = false,
+        val phase: ConnPhase = ConnPhase.OFF,
+        val flag: String = "🌐",
+        val server: String = "VIP server vault locked",
+        val ping: Int = 0,
+        val protocol: String = "AUTO",
+        val dns: String = "1.1.1.1",
+        val serverCount: Int = 0,
+        val error: String = ""
+    )
+
+    var state: UiState = UiState()
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var loadingRepository: Boolean = false
+
+    private val density = resources.displayMetrics.density
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val bold = Typeface.create("sans-serif-medium", Typeface.BOLD)
+    private val medium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val regular = Typeface.create("sans-serif", Typeface.NORMAL)
+    private val stars = List(42) { i ->
+        val x = ((i * 73 + 17) % 997) / 997f
+        val y = ((i * 131 + 47) % 991) / 991f
+        Triple(x, y, 0.55f + ((i * 19) % 45) / 100f)
+    }
+
+    private var phaseAnim = 0f
+    private var start = System.nanoTime()
+    private val connectHit = RectF()
+    private val serverHit = RectF()
+    private val vipHit = RectF()
+    private val protocolHit = RectF()
+    private val settingsHit = RectF()
+
+    init {
+        isClickable = true
+        val animator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 4200
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener {
+                phaseAnim = it.animatedValue as Float
+                invalidate()
+            }
+        }
+        animator.start()
+    }
+
+    private fun d(v: Float) = v * density
+
+    override fun onDraw(c: Canvas) {
+        super.onDraw(c)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0 || h <= 0) return
+
+        drawBackground(c, w, h)
+        drawHeader(c, w)
+        drawHero(c, w, h)
+        drawMetricRail(c, w, h)
+        drawServerCard(c, w, h)
+        drawBottomNav(c, w, h)
+    }
+
+    private fun drawBackground(c: Canvas, w: Float, h: Float) {
+        p.shader = LinearGradient(0f, 0f, 0f, h, intArrayOf(
+            Color.rgb(4, 8, 16), Color.rgb(5, 14, 25), Color.rgb(5, 10, 18)
+        ), null, Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w, h, p)
+        p.shader = null
+
+        val t = phaseAnim * (Math.PI * 2).toFloat()
+        val blobs = listOf(
+            Triple(w * (.20f + .035f * sin(t)), h * .20f, Color.rgb(13, 91, 126)),
+            Triple(w * (.84f + .03f * cos(t * .8f)), h * .33f, Color.rgb(24, 93, 80)),
+            Triple(w * (.45f + .06f * cos(t * .65f)), h * .72f, Color.rgb(28, 47, 101))
+        )
+        blobs.forEach { (x, y, col) ->
+            p.shader = RadialGradient(x, y, w * .55f, Color.argb(75, Color.red(col), Color.green(col), Color.blue(col)), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            c.drawCircle(x, y, w * .55f, p)
+            p.shader = null
+        }
+
+        stars.forEachIndexed { i, s ->
+            val alpha = (25 + 40 * ((sin(t + i * .7f) + 1f) / 2f)).toInt()
+            p.color = Color.argb(alpha, 180, 225, 234)
+            c.drawCircle(w * s.first, h * s.second, d(0.7f + s.third), p)
+        }
+    }
+
+    private fun drawHeader(c: Canvas, w: Float) {
+        val top = d(38f)
+        p.typeface = bold
+        p.textSize = d(24f)
+        p.shader = LinearGradient(d(22f), top, d(145f), top, Color.WHITE, Color.rgb(71, 243, 198), Shader.TileMode.CLAMP)
+        c.drawText("AWR VPN", d(22f), top, p)
+        p.shader = null
+        p.typeface = medium
+        p.textSize = d(8.5f)
+        p.color = Color.rgb(105, 130, 148)
+        c.drawText("PRIVATE NETWORK", d(23f), top + d(17f), p)
+
+        val vipW = d(94f)
+        val vipH = d(36f)
+        vipHit.set(w - d(22f) - vipW, d(20f), w - d(22f), d(20f) + vipH)
+        p.color = if (state.vip) Color.argb(42, 71, 243, 198) else Color.argb(40, 255, 196, 91)
+        c.drawRoundRect(vipHit, d(18f), d(18f), p)
+        stroke.strokeWidth = d(1f)
+        stroke.color = if (state.vip) Color.argb(100, 71, 243, 198) else Color.argb(100, 255, 196, 91)
+        c.drawRoundRect(vipHit, d(18f), d(18f), stroke)
+        p.typeface = bold
+        p.textSize = d(10f)
