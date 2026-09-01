@@ -22,14 +22,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Apply AWR VPN Ultra 2 sources
+      - name: Verify AWR VPN Ultra 2 sources
         run: |
-          cat AWRVPN/ultra2_bundle.part* | base64 -d > /tmp/awr-ultra2.tar.gz
-          tar -xzf /tmp/awr-ultra2.tar.gz -C AWRVPN
-          sed -i 's/singleLine = true/setSingleLine(true)/' AWRVPN/app/src/main/java/com/awr/vpn/MainActivity.kt
-          test -f AWRVPN/app/src/main/java/com/awr/vpn/MainActivity.kt
-          test -f AWRVPN/app/src/main/java/com/awr/vpn/ConnectionControl.kt
-          test -f AWRVPN/app/src/main/java/com/awr/vpn/SmartRouter.kt
+          test -f AWRVPN/app/src/main/java/com/awr/vpn/UltraMainActivity.kt
+          test -f AWRVPN/app/src/main/java/com/awr/vpn/UltraSurface.kt
+          test -f AWRVPN/app/src/main/java/com/awr/vpn/UltraState.kt
+          test -f AWRVPN/app/src/main/java/com/awr/vpn/ModelsNetwork.kt
       - name: Build AWR VPN Ultra 2
         working-directory: AWRVPN
         run: gradle :app:assembleDebug --stacktrace
