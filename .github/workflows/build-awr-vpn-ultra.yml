@@ -22,17 +22,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Reassemble UI sources
+      - name: Apply AWR VPN Ultra 2 sources
         run: |
-          mkdir -p AWRVPN/app/src/main/java/com/awr/vpn
-          cat AWRVPN/source_parts/MainActivity.kt.part* > AWRVPN/app/src/main/java/com/awr/vpn/MainActivity.kt
-          cat AWRVPN/source_parts/AwrVpnSurface.kt.part* > AWRVPN/app/src/main/java/com/awr/vpn/AwrVpnSurface.kt
-      - name: Build AWR VPN Ultra
+          cat AWRVPN/ultra2_bundle.part* | base64 -d > /tmp/awr-ultra2.tar.gz
+          tar -xzf /tmp/awr-ultra2.tar.gz -C AWRVPN
+          test -f AWRVPN/app/src/main/java/com/awr/vpn/MainActivity.kt
+          test -f AWRVPN/app/src/main/java/com/awr/vpn/ConnectionControl.kt
+          test -f AWRVPN/app/src/main/java/com/awr/vpn/SmartRouter.kt
+      - name: Build AWR VPN Ultra 2
         working-directory: AWRVPN
         run: gradle :app:assembleDebug --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AWR-VPN-ULTRA-debug
+          name: AWR-VPN-ULTRA-2-debug
           path: AWRVPN/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
