@@ -38,5 +38,5 @@ android {
 }
 
 dependencies {
-    implementation("com.github.schwabe:ics-openvpn:v0.6.73-production")
+    implementation(project(":openvpn-lib"))
 }

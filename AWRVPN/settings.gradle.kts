@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "AWRVPNUltra"
 include(":app")
+include(":openvpn-lib")

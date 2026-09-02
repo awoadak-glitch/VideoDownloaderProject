@@ -14,11 +14,18 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+      - name: Install native VPN toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y swig ninja-build
+          yes | sdkmanager "cmake;3.22.1" "ndk;27.3.13750724" || true
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
