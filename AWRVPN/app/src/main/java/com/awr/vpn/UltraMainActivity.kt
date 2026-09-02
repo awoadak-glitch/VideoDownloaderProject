@@ -33,8 +33,10 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
     private lateinit var engine: VpnEngine
     private lateinit var store: ConnectionStore
 
-    private var servers: List<ServerInfo> = emptyList()
+    private var proServers: List<ServerInfo> = emptyList()
+    private var freeServers: List<ServerInfo> = emptyList()
     private var selected: ServerInfo? = null
+    private var selectedTier = ServerTier.FREE
     private var protocol = ProtocolMode.AUTO
     private var dns = DnsMode.CLOUDFLARE
     private var autoBest = true
@@ -66,6 +68,7 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
         dns = store.dns()
         autoBest = store.autoBest()
         selected = store.loadServer()
+        selectedTier = selected?.tier ?: ServerTier.FREE
         reconnectRequested = intent?.getBooleanExtra(EXTRA_RECONNECT, false) == true || intent?.action == ACTION_AWR_RECONNECT
 
         phase = if (engine.isActive()) ConnPhase.ON else ConnPhase.OFF
@@ -82,7 +85,8 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
             store.setConnected(true)
             AwrNotifier.showConnected(this, selected)
         }
-        if (vip.isVip()) loadCatalog(false, reconnectRequested)
+        loadCatalog(ServerTier.FREE, false, reconnectRequested && selectedTier == ServerTier.FREE)
+        if (vip.isVip()) loadCatalog(ServerTier.PRO, false, reconnectRequested && selectedTier == ServerTier.PRO)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -90,14 +94,14 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
         setIntent(intent)
         if (intent?.action == ACTION_AWR_RECONNECT || intent?.getBooleanExtra(EXTRA_RECONNECT, false) == true) {
             reconnectRequested = true
-            if (!vip.isVip()) {
+            if (selectedTier == ServerTier.PRO && !vip.isVip()) {
                 showVipDialog()
                 return
             }
             userDisconnecting = false
             runCatching { engine.disconnect() }
             handler.postDelayed({
-                if (servers.isEmpty()) loadCatalog(false, true) else connectBestAsync()
+                if (currentServers().isEmpty()) loadCatalog(selectedTier, false, true) else connectBestAsync()
             }, 650L)
         }
     }
@@ -138,11 +142,14 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
             vip = vip.isVip(),
             phase = phase,
             flag = selected?.flag ?: "🌐",
-            server = selected?.country ?: if (vip.isVip()) "Smart route ready" else "VIP server vault locked",
+            server = selected?.country ?: if (selectedTier == ServerTier.PRO) "VPN PRO route ready" else "Free global route ready",
             ping = selected?.ping ?: 0,
             protocol = protocol.label,
             dns = dns.label,
-            serverCount = servers.size,
+            serverCount = currentServers().size,
+            proCount = proServers.size,
+            freeCount = freeServers.size,
+            tier = selectedTier,
             error = lastError,
             autoBest = autoBest,
             downloadBytes = downloadBytes,
@@ -164,34 +171,35 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
             syncUi()
             return
         }
-        if (!vip.isVip()) {
+        if (selectedTier == ServerTier.PRO && !vip.isVip()) {
             showVipDialog()
             return
         }
         userDisconnecting = false
         downloadBytes = 0L
         uploadBytes = 0L
-        if (servers.isEmpty()) loadCatalog(false, true)
+        if (currentServers().isEmpty()) loadCatalog(selectedTier, false, true)
         else if (autoBest) connectBestAsync()
         else if (selected != null) connectSelected()
         else {
-            selected = BestServerSelector.pick(servers, protocol)
+            selected = BestServerSelector.pick(currentServers(), protocol)
             connectSelected()
         }
     }
 
     private fun connectBestAsync() {
-        if (!vip.isVip()) return
-        if (servers.isEmpty()) {
-            loadCatalog(false, true)
+        if (selectedTier == ServerTier.PRO && !vip.isVip()) return
+        val available = currentServers()
+        if (available.isEmpty()) {
+            loadCatalog(selectedTier, false, true)
             return
         }
         phase = ConnPhase.FINDING
         lastError = ""
         syncUi()
         Thread {
-            val smart = runCatching { SmartRoute.pick(servers, protocol)?.server }.getOrNull()
-                ?: BestServerSelector.pick(servers, protocol)
+            val smart = runCatching { SmartRoute.pick(available, protocol)?.server }.getOrNull()
+                ?: BestServerSelector.pick(available, protocol)
             runOnUiThread {
                 if (smart == null) {
                     fail("NO_LIVE_SERVER")
@@ -207,6 +215,8 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
 
     private fun connectSelected() {
         val requested = selected ?: return
+        if (requested.tier == ServerTier.PRO && !vip.isVip()) { showVipDialog(); return }
+        selectedTier = requested.tier
         phase = ConnPhase.FINDING
         lastError = ""
         syncUi()
@@ -234,7 +244,7 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
                 val msg = e.message ?: "VPN_REPOSITORY_UNAVAILABLE"
                 runOnUiThread {
                     if (msg == "VIP_REQUIRED") {
-                        vip.clear(); servers = emptyList(); selected = null
+                        vip.clear(); proServers = emptyList(); if (selectedTier == ServerTier.PRO) selected = null
                         store.setConnected(false)
                         fail("VIP session expired")
                         showVipDialog()
@@ -251,38 +261,40 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
             if (first.message == "VIP_REQUIRED") throw first
             try {
                 // Same country first. The backend returns the strongest live replacement if the exact endpoint vanished.
-                ServerRepository.best(vip.key(), protocol, dns, requested.code)
+                ServerRepository.best(vip.key(), protocol, dns, requested.tier, requested.code)
             } catch (second: Exception) {
                 if (second.message == "VIP_REQUIRED") throw second
                 // Last-resort global Smart Route so a stale volunteer endpoint never becomes SERVER_NOT_FOUND.
-                ServerRepository.best(vip.key(), protocol, dns, null)
+                ServerRepository.best(vip.key(), protocol, dns, requested.tier, null)
             }
         }
     }
 
-    private fun loadCatalog(showAfter: Boolean, connectAfter: Boolean = false) {
-        if (!vip.isVip()) return
+    private fun loadCatalog(tier: ServerTier, showAfter: Boolean, connectAfter: Boolean = false) {
+        if (tier == ServerTier.PRO && !vip.isVip()) { if (showAfter) showVipDialog(); return }
         surface.loadingRepository = true
         Thread {
             try {
-                val list = ServerRepository.list(vip.key(), protocol)
+                val list = ServerRepository.list(vip.key(), protocol, tier)
                 runOnUiThread {
                     surface.loadingRepository = false
-                    servers = list
-                    if (autoBest) {
-                        selected = BestServerSelector.pick(list, protocol) ?: selected
-                    } else {
-                        val old = selected
-                        selected = list.firstOrNull { it.id == old?.id }
-                            ?: list.firstOrNull { it.code == old?.code && it.protocol == old?.protocol }
-                            ?: old
-                            ?: list.firstOrNull()
+                    setServers(tier, list)
+                    if (tier == selectedTier) {
+                        if (autoBest) {
+                            selected = BestServerSelector.pick(list, protocol) ?: selected?.takeIf { it.tier == tier }
+                        } else {
+                            val old = selected?.takeIf { it.tier == tier }
+                            selected = list.firstOrNull { it.id == old?.id }
+                                ?: list.firstOrNull { it.code == old?.code && it.protocol == old?.protocol }
+                                ?: old
+                                ?: list.firstOrNull()
+                        }
                     }
                     selected?.let { store.saveServer(it, autoBest) }
                     syncUi()
                     when {
                         connectAfter && list.isNotEmpty() -> if (autoBest) connectBestAsync() else connectSelected()
-                        showAfter && list.isNotEmpty() -> showServerDialog()
+                        showAfter && list.isNotEmpty() -> showTierServers(tier)
                         showAfter -> fail("NO_LIVE_SERVER")
                     }
                 }
@@ -290,13 +302,21 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
                 runOnUiThread {
                     surface.loadingRepository = false
                     val msg = e.message ?: "REPOSITORY_UNAVAILABLE"
-                    if (msg == "VIP_REQUIRED") {
-                        vip.clear(); servers = emptyList(); selected = null
+                    if (msg == "VIP_REQUIRED" && tier == ServerTier.PRO) {
+                        vip.clear(); proServers = emptyList(); if (selectedTier == ServerTier.PRO) selected = null
                         store.setConnected(false); syncUi(); showVipDialog()
                     } else fail(msg)
                 }
             }
         }.start()
+    }
+
+    private fun currentServers(): List<ServerInfo> = if (selectedTier == ServerTier.PRO) proServers else freeServers
+
+    private fun serversFor(tier: ServerTier): List<ServerInfo> = if (tier == ServerTier.PRO) proServers else freeServers
+
+    private fun setServers(tier: ServerTier, list: List<ServerInfo>) {
+        if (tier == ServerTier.PRO) proServers = list else freeServers = list
     }
 
     private fun fail(message: String) {
@@ -330,8 +350,7 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
     }
 
     override fun onServer() {
-        if (!vip.isVip()) { showVipDialog(); return }
-        if (servers.isEmpty()) loadCatalog(true) else showServerDialog()
+        showServerDialog()
     }
 
     override fun onVip() = showVipDialog()
@@ -348,9 +367,11 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
             box.addView(optionRow(mode.label, sub, protocol == mode) {
                 protocol = mode
                 store.saveProtocol(mode)
-                servers = emptyList()
+                proServers = emptyList()
+                freeServers = emptyList()
                 d.dismiss(); syncUi()
-                if (vip.isVip()) loadCatalog(false)
+                loadCatalog(ServerTier.FREE, false)
+                if (vip.isVip()) loadCatalog(ServerTier.PRO, false)
             })
         }
         d.show()
@@ -376,7 +397,7 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
         })
         if (vip.isVip()) {
             shell.addView(glassInfo("VIP STATUS", "ACTIVE", Color.rgb(71, 243, 198)))
-            shell.addView(glassInfo("LIVE ROUTES", servers.size.toString(), Color.rgb(111, 219, 244)))
+            shell.addView(glassInfo("VPN PRO ROUTES", proServers.size.toString(), Color.rgb(111, 219, 244)))
             vip.expires()?.let { shell.addView(glassInfo("EXPIRES", it.take(10), Color.WHITE)) }
             shell.addView(actionButton("CONTINUE SECURELY", Color.rgb(71, 243, 198), Color.rgb(3, 17, 22)) { d.dismiss() })
         } else {
@@ -403,7 +424,7 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
                             if (result.valid) {
                                 vip.save(code, result.expiresAt)
                                 status.text = "VIP VERIFIED • SERVER VAULT UNLOCKED"; status.setTextColor(Color.rgb(71, 243, 198)); syncUi()
-                                handler.postDelayed({ d.dismiss(); loadCatalog(false) }, 650L)
+                                handler.postDelayed({ d.dismiss(); loadCatalog(ServerTier.PRO, false) }, 650L)
                             } else {
                                 status.text = result.message; status.setTextColor(Color.rgb(255, 122, 132))
                             }
@@ -427,36 +448,89 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
         }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         titleRow.addView(TextView(this).apply {
-            text = "AWR SERVER VAULT"; textSize = 21f; setTextColor(Color.WHITE); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            text = "AWR GLOBAL NETWORK"; textSize = 21f; setTextColor(Color.WHITE); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         titleRow.addView(TextView(this).apply {
-            text = "${servers.size} LIVE"; textSize = 10.5f; setTextColor(Color.rgb(71, 243, 198)); setPadding(dp(11), dp(7), dp(11), dp(7)); background = rounded(Color.argb(40,71,243,198), 50f, Color.argb(95,71,243,198), 1)
+            text = "${proServers.size + freeServers.size} LIVE"; textSize = 10.5f; setTextColor(Color.rgb(71, 243, 198)); setPadding(dp(11), dp(7), dp(11), dp(7)); background = rounded(Color.argb(40,71,243,198), 50f, Color.argb(95,71,243,198), 1)
         })
         outer.addView(titleRow)
         outer.addView(TextView(this).apply {
-            text = "Choose a country, then any live endpoint. Smart Route combines source quality, speed, latency and load."; textSize = 12f; setTextColor(Color.rgb(137, 163, 178)); setPadding(0, dp(5), 0, dp(12))
+            text = "Two independent networks. PRO stays protected by AWR VIP; FREE is open to everyone and refreshed from public live feeds."; textSize = 12f; setTextColor(Color.rgb(137, 163, 178)); setPadding(0, dp(5), 0, dp(14))
         })
-        outer.addView(optionRow("⚡  SMART ROUTE", "Measure strong candidates from this phone and choose automatically", autoBest) {
-            d.dismiss(); autoBest = true; connectBestAsync()
+        outer.addView(tierCard(
+            title = "✦  VPN PRO",
+            subtitle = if (vip.isVip()) "Private AWR routes • priority Smart Route • VIP protected" else "Private AWR routes • enter VIP code to unlock",
+            count = proServers.size,
+            accent = Color.rgb(164, 122, 255),
+            locked = !vip.isVip(),
+            active = selectedTier == ServerTier.PRO
+        ) {
+            d.dismiss()
+            if (!vip.isVip()) showVipDialog()
+            else if (proServers.isEmpty()) loadCatalog(ServerTier.PRO, true)
+            else showTierServers(ServerTier.PRO)
         })
+        outer.addView(TextView(this).apply {
+            text = "PUBLIC NETWORK"; textSize = 9f; setTextColor(Color.rgb(87, 115, 135)); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD); setPadding(dp(4), dp(9), 0, dp(8))
+        })
+        outer.addView(tierCard(
+            title = "◎  VPN FREE",
+            subtitle = "VPN Gate + AutoOVPN mirror + PublicVPNList live checks",
+            count = freeServers.size,
+            accent = Color.rgb(71, 243, 198),
+            locked = false,
+            active = selectedTier == ServerTier.FREE
+        ) {
+            d.dismiss()
+            if (freeServers.isEmpty()) loadCatalog(ServerTier.FREE, true)
+            else showTierServers(ServerTier.FREE)
+        })
+        outer.addView(TextView(this).apply {
+            text = "Public volunteer VPNs change continuously. AWR ranks recent speed, latency, load and live verification before selection."; textSize = 10.5f; setTextColor(Color.rgb(105, 132, 149)); setPadding(dp(4), dp(12), dp(4), 0)
+        })
+        d.setContentView(outer)
+        styleBottomDialog(d, .68f)
+        d.show()
+    }
 
+    private fun showTierServers(tier: ServerTier) {
+        val list = serversFor(tier)
+        if (tier == ServerTier.PRO && !vip.isVip()) { showVipDialog(); return }
+        if (list.isEmpty()) { loadCatalog(tier, true); return }
+        val d = Dialog(this)
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val accent = if (tier == ServerTier.PRO) Color.rgb(164, 122, 255) else Color.rgb(71, 243, 198)
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(20), dp(18), dp(16)); background = rounded(Color.rgb(7, 17, 29), 30f, Color.rgb(42, 76, 90), 1)
+        }
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        titleRow.addView(TextView(this).apply {
+            text = tier.label; textSize = 22f; setTextColor(Color.WHITE); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        titleRow.addView(TextView(this).apply {
+            text = "${list.size} LIVE"; textSize = 10.5f; setTextColor(accent); setPadding(dp(11), dp(7), dp(11), dp(7)); background = rounded(Color.argb(38, Color.red(accent), Color.green(accent), Color.blue(accent)), 50f, Color.argb(105, Color.red(accent), Color.green(accent), Color.blue(accent)), 1)
+        })
+        outer.addView(titleRow)
+        outer.addView(TextView(this).apply {
+            text = if (tier == ServerTier.PRO) "Priority private catalog with AWR VIP authorization." else "Free public catalog refreshed from multiple community feeds and live checks."
+            textSize = 11.5f; setTextColor(Color.rgb(137, 163, 178)); setPadding(0, dp(5), 0, dp(12))
+        })
+        outer.addView(optionRow("⚡  SMART ROUTE", "Measure top routes on this phone and choose the strongest", selectedTier == tier && autoBest) {
+            selectedTier = tier; autoBest = true; selected = BestServerSelector.pick(list, protocol); selected?.let { store.saveServer(it, true) }
+            d.dismiss(); syncUi()
+        })
         val scroll = ScrollView(this)
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val groups = servers.groupBy { it.country }.toList().sortedWith(
-            compareByDescending<Pair<String, List<ServerInfo>>> { it.second.size }.thenBy { it.first }
-        )
+        val groups = list.groupBy { it.country }.toList().sortedWith(compareByDescending<Pair<String, List<ServerInfo>>> { it.second.size }.thenBy { it.first })
         groups.forEach { (country, group) ->
             val best = BestServerSelector.pick(group, protocol) ?: group.first()
-            val verifiedCount = group.count { it.verified }
-            box.addView(countryRow(country, group, best, verifiedCount) {
+            box.addView(countryRow(country, group, best, group.count { it.verified }) {
                 d.dismiss(); showCountryServers(country, group)
             })
         }
         scroll.addView(box)
         outer.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        d.setContentView(outer)
-        styleBottomDialog(d, .86f)
-        d.show()
+        d.setContentView(outer); styleBottomDialog(d, .88f); d.show()
     }
 
     private fun showCountryServers(country: String, group: List<ServerInfo>) {
@@ -474,6 +548,7 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
         })
         outer.addView(optionRow("⚡ FASTEST IN $country", "Pick the highest-ranked live endpoint in this country", false) {
             autoBest = false
+            selectedTier = group.firstOrNull()?.tier ?: selectedTier
             selected = BestServerSelector.pick(group, protocol) ?: group.firstOrNull()
             selected?.let { store.saveServer(it, false) }
             d.dismiss(); syncUi()
@@ -484,7 +559,7 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
             .take(180)
             .forEach { s ->
                 box.addView(serverRow(s, !autoBest && selected?.id == s.id) {
-                    autoBest = false; selected = s; store.saveServer(s, false); d.dismiss(); syncUi()
+                    autoBest = false; selectedTier = s.tier; selected = s; store.saveServer(s, false); d.dismiss(); syncUi()
                 })
             }
         scroll.addView(box)
@@ -521,12 +596,14 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
         val d = pair.first; val box = pair.second
         box.addView(optionRow("SMART ROUTE", if (autoBest) "Enabled • measures and ranks candidates automatically" else "Disabled • manual server locked", autoBest) {
             autoBest = !autoBest
-            if (autoBest && servers.isNotEmpty()) selected = BestServerSelector.pick(servers, protocol)
+            if (autoBest && currentServers().isNotEmpty()) selected = BestServerSelector.pick(currentServers(), protocol)
             store.saveServer(selected, autoBest); d.dismiss(); syncUi()
         })
         box.addView(optionRow("SECURE DNS", "${dns.label} • protected inside tunnel", false) { d.dismiss(); showDnsDialog() })
         box.addView(optionRow("ANDROID KILL SWITCH", "Always-on VPN + Block connections without VPN", false) { startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) })
-        box.addView(optionRow("REFRESH LIVE ROUTES", "Fetch a fresh VIP-authorized catalog", false) { d.dismiss(); if (vip.isVip()) loadCatalog(false) else showVipDialog() })
+        box.addView(optionRow("REFRESH LIVE ROUTES", "Refresh VPN FREE and the unlocked VPN PRO catalog", false) {
+            d.dismiss(); loadCatalog(ServerTier.FREE, false); if (vip.isVip()) loadCatalog(ServerTier.PRO, false)
+        })
         box.addView(optionRow("AWR VIP", if (vip.isVip()) "Active on this device" else "Required for repository access", vip.isVip()) { d.dismiss(); showVipDialog() })
         d.show()
     }
@@ -573,6 +650,31 @@ class UltraMainActivity : Activity(), VpnStatus.StateListener, VpnStatus.ByteCou
         addView(TextView(this@UltraMainActivity).apply { text = if (selectedRow) "✓  $title" else title; textSize = 14.5f; setTextColor(if (selectedRow) Color.rgb(71,243,198) else Color.WHITE); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) })
         addView(TextView(this@UltraMainActivity).apply { text = sub; textSize = 11.5f; setTextColor(Color.rgb(122,149,165)); setPadding(0, dp(4), 0, 0) })
         setOnClickListener { click() }; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(9) }
+    }
+
+    private fun tierCard(title: String, subtitle: String, count: Int, accent: Int, locked: Boolean, active: Boolean, click: () -> Unit): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(17), dp(17), dp(15), dp(17))
+        background = rounded(
+            if (active) Color.argb(38, Color.red(accent), Color.green(accent), Color.blue(accent)) else Color.rgb(9, 23, 38),
+            23f,
+            if (active) Color.argb(145, Color.red(accent), Color.green(accent), Color.blue(accent)) else Color.rgb(35, 61, 78), 1
+        )
+        addView(TextView(this@UltraMainActivity).apply {
+            text = if (locked) "◇" else if (title.contains("PRO")) "✦" else "◎"; textSize = 27f; gravity = Gravity.CENTER; setTextColor(accent)
+            background = rounded(Color.argb(30, Color.red(accent), Color.green(accent), Color.blue(accent)), 18f)
+        }, LinearLayout.LayoutParams(dp(54), dp(54)))
+        addView(LinearLayout(this@UltraMainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@UltraMainActivity).apply { text = title.replace("✦  ", "").replace("◎  ", ""); textSize = 17f; setTextColor(Color.WHITE); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD) })
+            addView(TextView(this@UltraMainActivity).apply { text = subtitle; textSize = 10.5f; setTextColor(Color.rgb(119, 147, 165)); maxLines = 2; setPadding(0, dp(4), 0, 0) })
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(12) })
+        addView(LinearLayout(this@UltraMainActivity).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.END
+            addView(TextView(this@UltraMainActivity).apply { text = if (locked) "LOCKED" else if (count > 0) count.toString() else "SYNC"; textSize = 12f; setTextColor(accent); typeface = Typeface.create("sans-serif-medium", Typeface.BOLD); gravity = Gravity.END })
+            addView(TextView(this@UltraMainActivity).apply { text = if (locked) "VIP  ›" else "LIVE  ›"; textSize = 8.5f; setTextColor(Color.rgb(103, 132, 150)); gravity = Gravity.END; setPadding(0, dp(4), 0, 0) })
+        })
+        setOnClickListener { click() }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
     }
 
     private fun serverRow(server: ServerInfo, selectedRow: Boolean, click: () -> Unit): View = LinearLayout(this).apply {

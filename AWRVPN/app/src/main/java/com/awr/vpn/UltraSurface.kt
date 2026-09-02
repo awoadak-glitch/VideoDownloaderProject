@@ -29,6 +29,9 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
         val protocol: String = "AUTO",
         val dns: String = "1.1.1.1",
         val serverCount: Int = 0,
+        val proCount: Int = 0,
+        val freeCount: Int = 0,
+        val tier: ServerTier = ServerTier.FREE,
         val error: String = "",
         val autoBest: Boolean = true,
         val downloadBytes: Long = 0L,
@@ -112,7 +115,7 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
         state.phase == ConnPhase.ON -> Color.rgb(71, 243, 198)
         state.phase == ConnPhase.ERROR -> Color.rgb(255, 91, 119)
         state.phase == ConnPhase.FINDING || state.phase == ConnPhase.AUTH || state.phase == ConnPhase.CONNECTING -> Color.rgb(91, 213, 255)
-        state.vip -> Color.rgb(116, 110, 255)
+        state.tier == ServerTier.PRO -> Color.rgb(164, 122, 255)
         else -> Color.rgb(112, 136, 159)
     }
 
@@ -157,7 +160,7 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
         p.shader = LinearGradient(d(20f), top + d(34f), d(183f), top + d(34f), intArrayOf(Color.WHITE, Color.rgb(91, 213, 255), Color.rgb(71, 243, 198)), null, Shader.TileMode.CLAMP)
         c.drawText("AWR VPN", d(21f), top + d(37f), p); p.shader = null
         p.typeface = bold; p.textSize = d(7.4f); p.color = Color.rgb(91, 126, 149)
-        c.drawText("ULTRA PRIVATE NETWORK  •  2.1", d(22f), top + d(53f), p)
+        c.drawText("ULTRA GLOBAL NETWORK  •  2.2", d(22f), top + d(53f), p)
 
         val bw = d(108f); val bh = d(38f)
         vipHit.set(w - d(20f) - bw, top + d(18f), w - d(20f), top + d(18f) + bh)
@@ -178,7 +181,7 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
             ConnPhase.AUTH -> "◌  AUTHORIZING VIP PROFILE"
             ConnPhase.CONNECTING -> "◌  ESTABLISHING ENCRYPTED TUNNEL"
             ConnPhase.ERROR -> "!  CONNECTION INTERRUPTED"
-            ConnPhase.OFF -> if (state.vip) "◦  READY • TAP THE CORE" else "⌁  VIP REQUIRED"
+            ConnPhase.OFF -> if (state.tier == ServerTier.PRO && !state.vip) "⌁  VPN PRO • VIP REQUIRED" else "◦  READY • TAP THE CORE"
         }
         val col = accent()
         p.typeface = bold; p.textSize = d(8.7f)
@@ -294,8 +297,8 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
             state.phase==ConnPhase.ERROR&&state.error.isNotBlank()->state.error.take(52)
             active->"Protected • ${formatDuration(state.connectedSeconds)} • ${state.flag} ${state.server.take(24)}"
             working->"AWR is selecting and negotiating a live encrypted route"
-            state.autoBest&&state.vip->"SMART ROUTE • live quality scoring ready"
-            !state.vip->"Activate VIP to unlock the secure route vault"
+            state.autoBest&&(state.tier==ServerTier.FREE||state.vip)->"SMART ROUTE • live quality scoring ready"
+            state.tier==ServerTier.PRO&&!state.vip->"Activate VIP to unlock VPN PRO routes"
             else->"Touch the reactor to connect"
         }
         c.drawText(sub,cx,cy+d(127f),p);p.textAlign=Paint.Align.LEFT
@@ -318,30 +321,43 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
     }
 
     private fun drawServerCard(c:Canvas,w:Float,h:Float){
-        val margin=d(20f);val top=h*.68f;val bottom=min(h-d(104f),top+d(116f))
+        val margin=d(20f);val top=h*.675f;val bottom=min(h-d(102f),top+d(126f))
         serverHit.set(margin,top,w-margin,bottom)
-        p.color=Color.argb(215,7,22,36);c.drawRoundRect(serverHit,d(25f),d(25f),p)
-        val col=if(state.vip)Color.rgb(71,243,198) else Color.rgb(255,199,96)
+        p.shader=LinearGradient(serverHit.left,serverHit.top,serverHit.right,serverHit.bottom,
+            intArrayOf(Color.rgb(8,23,39),if(state.tier==ServerTier.PRO)Color.rgb(23,19,48) else Color.rgb(7,37,39)),null,Shader.TileMode.CLAMP)
+        c.drawRoundRect(serverHit,d(25f),d(25f),p);p.shader=null
+        val col=if(state.tier==ServerTier.PRO)Color.rgb(174,131,255) else Color.rgb(71,243,198)
         stroke.strokeWidth=d(1f);stroke.color=Color.argb(90,Color.red(col),Color.green(col),Color.blue(col));c.drawRoundRect(serverHit,d(25f),d(25f),stroke)
-        p.textSize=d(31f);c.drawText(state.flag,margin+d(16f),top+d(50f),p)
-        p.typeface=bold;p.textSize=d(7.8f);p.color=if(state.autoBest)Color.rgb(71,243,198) else Color.rgb(125,153,171)
-        c.drawText(if(state.autoBest)"⚡ SMART ROUTE" else "MANUAL ROUTE",margin+d(62f),top+d(19f),p)
-        p.typeface=medium;p.textSize=d(15.3f);p.color=Color.WHITE;c.drawText(state.server.take(28),margin+d(62f),top+d(43f),p)
+        // Network tier capsules: PRO is always above FREE in the visual hierarchy.
+        val capTop=top+d(12f);val capH=d(25f);val capGap=d(7f);val capW=(serverHit.width()-d(27f)-capGap)/2f
+        fun tierCap(x:Float,label:String,count:Int,tier:ServerTier,accent:Int){
+            val active=state.tier==tier;val r=RectF(x,capTop,x+capW,capTop+capH)
+            p.color=Color.argb(if(active)48 else 18,Color.red(accent),Color.green(accent),Color.blue(accent));c.drawRoundRect(r,d(13f),d(13f),p)
+            stroke.strokeWidth=d(.8f);stroke.color=Color.argb(if(active)145 else 55,Color.red(accent),Color.green(accent),Color.blue(accent));c.drawRoundRect(r,d(13f),d(13f),stroke)
+            p.typeface=bold;p.textSize=d(7.4f);p.color=if(active)accent else Color.rgb(108,130,147);p.textAlign=Paint.Align.CENTER
+            c.drawText("$label  •  ${if(count>0)count else "SYNC"}",r.centerX(),r.centerY()+d(2.6f),p)
+        }
+        tierCap(margin+d(10f),"VPN PRO",state.proCount,ServerTier.PRO,Color.rgb(174,131,255))
+        tierCap(margin+d(10f)+capW+capGap,"VPN FREE",state.freeCount,ServerTier.FREE,Color.rgb(71,243,198));p.textAlign=Paint.Align.LEFT
+
+        p.textSize=d(29f);c.drawText(state.flag,margin+d(16f),top+d(77f),p)
+        p.typeface=bold;p.textSize=d(7.8f);p.color=col
+        c.drawText(if(state.autoBest)"⚡ ${state.tier.label} • SMART ROUTE" else "${state.tier.label} • MANUAL",margin+d(62f),top+d(53f),p)
+        p.typeface=medium;p.textSize=d(14.7f);p.color=Color.WHITE;c.drawText(state.server.take(28),margin+d(62f),top+d(76f),p)
         p.typeface=regular;p.textSize=d(9.3f);p.color=Color.rgb(115,145,163)
         val status=when{
-            !state.vip->"AWR-VIP authorization required"
+            state.tier==ServerTier.PRO&&!state.vip->"AWR VIP authorization required"
             state.serverCount<=0->"Refreshing secure route catalog…"
             else->"${if(state.ping>0)"${state.ping} ms" else "LIVE"} • ${state.serverCount} endpoints • ${state.dns} DNS"
         }
-        c.drawText(status,margin+d(62f),top+d(63f),p)
-        if(state.vip){
+        c.drawText(status,margin+d(62f),top+d(95f),p)
+        if(state.tier==ServerTier.FREE||state.vip){
             val badge=if(state.verified)"✓ VERIFIED  •  Q${state.quality}" else "LIVE  •  Q${state.quality}"
             p.typeface=bold;p.textSize=d(7.5f);p.color=if(state.verified)Color.rgb(101,231,201) else Color.rgb(118,166,190)
-            c.drawText(badge,margin+d(62f),top+d(84f),p)
-            p.typeface=regular;p.textSize=d(6.8f);p.color=Color.rgb(75,105,124);c.drawText(state.source.take(35),margin+d(62f),top+d(101f),p)
+            c.drawText(badge,margin+d(62f),top+d(114f),p)
         }
-        val label=if(loadingRepository)"SCANNING…" else if(state.vip)"VAULT  ›" else "UNLOCK  ›"
-        p.typeface=bold;p.textSize=d(8.8f);p.color=col;p.textAlign=Paint.Align.RIGHT;c.drawText(label,w-margin-d(14f),top+d(44f),p);p.textAlign=Paint.Align.LEFT
+        val label=if(loadingRepository)"SCANNING…" else "NETWORKS  ›"
+        p.typeface=bold;p.textSize=d(8.3f);p.color=col;p.textAlign=Paint.Align.RIGHT;c.drawText(label,w-margin-d(14f),top+d(76f),p);p.textAlign=Paint.Align.LEFT
     }
 
     private fun drawBottomNav(c:Canvas,w:Float,h:Float){

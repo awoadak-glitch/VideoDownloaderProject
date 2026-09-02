@@ -45,13 +45,14 @@ data class ServerInfo(
     val protocol: String,
     val quality: Int = 0,
     val verified: Boolean = false,
-    val source: String = "VPN Gate"
+    val source: String = "VPN Gate",
+    val tier: ServerTier = ServerTier.PRO
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id).put("name", name).put("country", country).put("code", code).put("flag", flag)
         .put("host", host).put("port", port).put("ping", ping).put("speed", speedBps)
         .put("sessions", sessions).put("protocol", protocol).put("quality", quality)
-        .put("verified", verified).put("source", source)
+        .put("verified", verified).put("source", source).put("tier", tier.name)
 
     companion object {
         fun fromJson(obj: JSONObject): ServerInfo = ServerInfo(
@@ -59,7 +60,8 @@ data class ServerInfo(
             code = obj.optString("code"), flag = obj.optString("flag", "🌐"), host = obj.optString("host"),
             port = obj.optInt("port"), ping = obj.optInt("ping"), speedBps = obj.optLong("speed"),
             sessions = obj.optInt("sessions"), protocol = obj.optString("protocol", "auto"),
-            quality = obj.optInt("quality"), verified = obj.optBoolean("verified"), source = obj.optString("source", "VPN Gate")
+            quality = obj.optInt("quality"), verified = obj.optBoolean("verified"), source = obj.optString("source", "VPN Gate"),
+            tier = runCatching { ServerTier.valueOf(obj.optString("tier", ServerTier.PRO.name)) }.getOrDefault(ServerTier.PRO)
         )
     }
 }
@@ -67,6 +69,7 @@ data class ServerInfo(
 data class VpnProfileData(val server: ServerInfo, val ovpn: String, val fallback: Boolean = false)
 
 enum class ProtocolMode(val label: String) { AUTO("AUTO"), UDP("UDP"), TCP("TCP") }
+enum class ServerTier(val label: String) { PRO("VPN PRO"), FREE("VPN FREE") }
 enum class DnsMode(val label: String, val d1: String, val d2: String) {
     CLOUDFLARE("1.1.1.1", "1.1.1.1", "1.0.0.1"),
     GOOGLE("8.8.8.8", "8.8.8.8", "8.8.4.4"),
@@ -133,8 +136,8 @@ object ServerRepository {
         connectTimeout = 15000
         readTimeout = 25000
         setRequestProperty("Accept", "application/json")
-        setRequestProperty("X-AWR-VIP", vipKey)
-        setRequestProperty("User-Agent", "AWR-VPN-Android/2.1")
+        if (vipKey.isNotBlank()) setRequestProperty("X-AWR-VIP", vipKey)
+        setRequestProperty("User-Agent", "AWR-VPN-Android/2.2")
     }
 
     private fun response(conn: HttpURLConnection): JSONObject {
@@ -145,7 +148,7 @@ object ServerRepository {
         return obj
     }
 
-    private fun server(x: JSONObject, fallback: ServerInfo? = null): ServerInfo = ServerInfo(
+    private fun server(x: JSONObject, fallback: ServerInfo? = null, requestedTier: ServerTier = fallback?.tier ?: ServerTier.PRO): ServerInfo = ServerInfo(
         id = x.optString("id", fallback?.id ?: ""),
         name = x.optString("name", fallback?.name ?: "AWR Route"),
         country = x.optString("country", fallback?.country ?: "Unknown"),
@@ -159,34 +162,38 @@ object ServerRepository {
         protocol = x.optString("protocol", fallback?.protocol ?: "auto"),
         quality = x.optInt("quality_score", fallback?.quality ?: 0),
         verified = x.optBoolean("verified", fallback?.verified ?: false),
-        source = x.optString("source", fallback?.source ?: "VPN Gate")
+        source = x.optString("source", fallback?.source ?: "VPN Gate"),
+        tier = if (x.has("premium")) if (x.optBoolean("premium")) ServerTier.PRO else ServerTier.FREE else requestedTier
     )
 
-    fun list(vipKey: String, protocol: ProtocolMode): List<ServerInfo> {
+    fun list(vipKey: String, protocol: ProtocolMode, tier: ServerTier): List<ServerInfo> {
         val p = protocol.name.lowercase(Locale.US)
-        val obj = response(open("$API_BASE/api/vpn-servers?action=list&protocol=${URLEncoder.encode(p, "UTF-8")}", vipKey))
+        val t = tier.name.lowercase(Locale.US)
+        val obj = response(open("$API_BASE/api/vpn-servers?action=list&tier=$t&protocol=${URLEncoder.encode(p, "UTF-8")}", if (tier == ServerTier.PRO) vipKey else ""))
         val arr = obj.optJSONArray("servers") ?: return emptyList()
         return buildList {
-            for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(server(it)) }
+            for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { add(server(it, requestedTier = tier)) }
         }
     }
 
     fun profile(vipKey: String, selected: ServerInfo, protocol: ProtocolMode, dns: DnsMode): VpnProfileData {
         val p = protocol.name.lowercase(Locale.US)
+        val t = selected.tier.name.lowercase(Locale.US)
         val id = URLEncoder.encode(selected.id, "UTF-8")
         val country = URLEncoder.encode(selected.code, "UTF-8")
-        val obj = response(open("$API_BASE/api/vpn-servers?action=get&id=$id&country=$country&protocol=$p", vipKey))
-        val resolved = server(obj.optJSONObject("server") ?: JSONObject(), selected)
+        val obj = response(open("$API_BASE/api/vpn-servers?action=get&tier=$t&id=$id&country=$country&protocol=$p", if (selected.tier == ServerTier.PRO) vipKey else ""))
+        val resolved = server(obj.optJSONObject("server") ?: JSONObject(), selected, selected.tier)
         var cfg = obj.getString("ovpn").trim()
         cfg += "\ndhcp-option DNS ${dns.d1}\ndhcp-option DNS ${dns.d2}\nsetenv opt block-outside-dns\n"
         return VpnProfileData(resolved, cfg, obj.optBoolean("fallback", false))
     }
 
-    fun best(vipKey: String, protocol: ProtocolMode, dns: DnsMode, countryCode: String? = null): VpnProfileData {
+    fun best(vipKey: String, protocol: ProtocolMode, dns: DnsMode, tier: ServerTier, countryCode: String? = null): VpnProfileData {
         val p = protocol.name.lowercase(Locale.US)
+        val t = tier.name.lowercase(Locale.US)
         val country = countryCode?.takeIf { it.isNotBlank() }?.let { "&country=${URLEncoder.encode(it, "UTF-8")}" } ?: ""
-        val obj = response(open("$API_BASE/api/vpn-servers?action=best&protocol=$p$country", vipKey))
-        val resolved = server(obj.optJSONObject("server") ?: JSONObject())
+        val obj = response(open("$API_BASE/api/vpn-servers?action=best&tier=$t&protocol=$p$country", if (tier == ServerTier.PRO) vipKey else ""))
+        val resolved = server(obj.optJSONObject("server") ?: JSONObject(), requestedTier = tier)
         var cfg = obj.getString("ovpn").trim()
         cfg += "\ndhcp-option DNS ${dns.d1}\ndhcp-option DNS ${dns.d2}\nsetenv opt block-outside-dns\n"
         return VpnProfileData(resolved, cfg, obj.optBoolean("fallback", false))

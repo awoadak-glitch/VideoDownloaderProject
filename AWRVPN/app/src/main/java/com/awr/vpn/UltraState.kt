@@ -25,7 +25,7 @@ class ConnectionStore(context: Context) {
             listOf(
                 "server_id", "server_name", "server_country", "server_code", "server_flag", "server_host",
                 "server_port", "server_ping", "server_speed", "server_sessions", "server_protocol",
-                "server_quality", "server_verified", "server_source"
+                "server_quality", "server_verified", "server_source", "server_tier"
             ).forEach(e::remove)
         } else {
             e.putString("server_id", server.id)
@@ -42,6 +42,7 @@ class ConnectionStore(context: Context) {
                 .putInt("server_quality", server.quality)
                 .putBoolean("server_verified", server.verified)
                 .putString("server_source", server.source)
+                .putString("server_tier", server.tier.name)
         }
         e.apply()
     }
@@ -62,7 +63,10 @@ class ConnectionStore(context: Context) {
             protocol = prefs.getString("server_protocol", "auto") ?: "auto",
             quality = prefs.getInt("server_quality", 0),
             verified = prefs.getBoolean("server_verified", false),
-            source = prefs.getString("server_source", "VPN Gate") ?: "VPN Gate"
+            source = prefs.getString("server_source", "VPN Gate") ?: "VPN Gate",
+            tier = runCatching {
+                ServerTier.valueOf(prefs.getString("server_tier", ServerTier.PRO.name) ?: ServerTier.PRO.name)
+            }.getOrDefault(ServerTier.PRO)
         )
     }
 
