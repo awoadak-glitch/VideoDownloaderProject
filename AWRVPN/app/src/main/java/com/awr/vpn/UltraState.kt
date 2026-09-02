@@ -9,6 +9,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import kotlin.math.ln
 import kotlin.math.max
 
 internal const val ACTION_AWR_DISCONNECT = "com.awr.vpn.action.DISCONNECT"
@@ -21,21 +22,26 @@ class ConnectionStore(context: Context) {
     fun saveServer(server: ServerInfo?, autoBest: Boolean) {
         val e = prefs.edit().putBoolean("auto_best", autoBest)
         if (server == null) {
-            e.remove("server_id").remove("server_name").remove("server_country")
-                .remove("server_code").remove("server_flag").remove("server_ping")
-                .remove("server_speed").remove("server_sessions").remove("server_protocol")
-                .remove("server_score")
+            listOf(
+                "server_id", "server_name", "server_country", "server_code", "server_flag", "server_host",
+                "server_port", "server_ping", "server_speed", "server_sessions", "server_protocol",
+                "server_quality", "server_verified", "server_source"
+            ).forEach(e::remove)
         } else {
             e.putString("server_id", server.id)
                 .putString("server_name", server.name)
                 .putString("server_country", server.country)
                 .putString("server_code", server.code)
                 .putString("server_flag", server.flag)
+                .putString("server_host", server.host)
+                .putInt("server_port", server.port)
                 .putInt("server_ping", server.ping)
                 .putLong("server_speed", server.speedBps)
                 .putInt("server_sessions", server.sessions)
                 .putString("server_protocol", server.protocol)
-                .putLong("server_score", server.score)
+                .putInt("server_quality", server.quality)
+                .putBoolean("server_verified", server.verified)
+                .putString("server_source", server.source)
         }
         e.apply()
     }
@@ -48,33 +54,39 @@ class ConnectionStore(context: Context) {
             country = prefs.getString("server_country", "Secure route") ?: "Secure route",
             code = prefs.getString("server_code", "--") ?: "--",
             flag = prefs.getString("server_flag", "🌐") ?: "🌐",
+            host = prefs.getString("server_host", "") ?: "",
+            port = prefs.getInt("server_port", 0),
             ping = prefs.getInt("server_ping", 0),
             speedBps = prefs.getLong("server_speed", 0L),
             sessions = prefs.getInt("server_sessions", 0),
             protocol = prefs.getString("server_protocol", "auto") ?: "auto",
-            score = prefs.getLong("server_score", 0L)
+            quality = prefs.getInt("server_quality", 0),
+            verified = prefs.getBoolean("server_verified", false),
+            source = prefs.getString("server_source", "VPN Gate") ?: "VPN Gate"
         )
     }
 
     fun autoBest(): Boolean = prefs.getBoolean("auto_best", true)
+
     fun setConnected(value: Boolean) {
         val e = prefs.edit().putBoolean("connected", value)
         if (value && prefs.getLong("connected_at", 0L) <= 0L) e.putLong("connected_at", System.currentTimeMillis())
         if (!value) e.putLong("connected_at", 0L)
         e.apply()
     }
+
     fun wasConnected(): Boolean = prefs.getBoolean("connected", false)
     fun connectedAt(): Long = prefs.getLong("connected_at", 0L)
 
     fun saveProtocol(value: ProtocolMode) = prefs.edit().putString("protocol", value.name).apply()
-    fun protocol(): ProtocolMode = try {
+    fun protocol(): ProtocolMode = runCatching {
         ProtocolMode.valueOf(prefs.getString("protocol", ProtocolMode.AUTO.name) ?: ProtocolMode.AUTO.name)
-    } catch (_: Exception) { ProtocolMode.AUTO }
+    }.getOrDefault(ProtocolMode.AUTO)
 
     fun saveDns(value: DnsMode) = prefs.edit().putString("dns", value.name).apply()
-    fun dns(): DnsMode = try {
+    fun dns(): DnsMode = runCatching {
         DnsMode.valueOf(prefs.getString("dns", DnsMode.CLOUDFLARE.name) ?: DnsMode.CLOUDFLARE.name)
-    } catch (_: Exception) { DnsMode.CLOUDFLARE }
+    }.getOrDefault(DnsMode.CLOUDFLARE)
 }
 
 object BestServerSelector {
@@ -85,14 +97,14 @@ object BestServerSelector {
             ProtocolMode.UDP -> servers.filter { it.protocol.equals("udp", true) }.ifEmpty { servers }
             ProtocolMode.TCP -> servers.filter { it.protocol.equals("tcp", true) }.ifEmpty { servers }
         }
-        val maxScore = max(1L, candidates.maxOfOrNull { it.score } ?: 1L).toDouble()
         val maxSpeed = max(1L, candidates.maxOfOrNull { it.speedBps } ?: 1L).toDouble()
         return candidates.maxByOrNull { s ->
-            val provider = (s.score.coerceAtLeast(0L) / maxScore).coerceIn(0.0, 1.0)
-            val speed = (s.speedBps.coerceAtLeast(0L) / maxSpeed).coerceIn(0.0, 1.0)
-            val latency = if (s.ping > 0) (1.0 - s.ping.coerceAtMost(600) / 600.0) else 0.38
-            val load = (1.0 / (1.0 + s.sessions.coerceAtLeast(0) / 180.0)).coerceIn(0.0, 1.0)
-            provider * 0.55 + speed * 0.24 + latency * 0.16 + load * 0.05
+            val quality = s.quality.coerceIn(0, 100) / 100.0
+            val speed = ln(1.0 + s.speedBps.coerceAtLeast(0).toDouble()) / ln(1.0 + maxSpeed)
+            val latency = if (s.ping > 0) 1.0 / (1.0 + s.ping / 85.0) else 0.32
+            val load = 1.0 / (1.0 + s.sessions.coerceAtLeast(0) / 120.0)
+            val verified = if (s.verified) 0.12 else 0.0
+            quality * 0.44 + speed * 0.24 + latency * 0.22 + load * 0.10 + verified
         }
     }
 }
@@ -123,23 +135,34 @@ object AwrNotifier {
         }
         val openPi = PendingIntent.getActivity(context, 110, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        val disconnectIntent = Intent(context, AwrVpnActionReceiver::class.java).apply { action = ACTION_AWR_DISCONNECT }
-        val disconnectPi = PendingIntent.getBroadcast(context, 111, disconnectIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val disconnectPi = PendingIntent.getBroadcast(
+            context,
+            111,
+            Intent(context, AwrVpnActionReceiver::class.java).apply { action = ACTION_AWR_DISCONNECT },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        val reconnectIntent = Intent(context, UltraMainActivity::class.java).apply {
-            action = ACTION_AWR_RECONNECT
-            putExtra(EXTRA_RECONNECT, true)
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val reconnectPi = PendingIntent.getActivity(context, 112, reconnectIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val reconnectPi = PendingIntent.getActivity(
+            context,
+            112,
+            Intent(context, UltraMainActivity::class.java).apply {
+                action = ACTION_AWR_RECONNECT
+                putExtra(EXTRA_RECONNECT, true)
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        val title = "AWR VPN • Protected"
         val country = server?.let { "${it.flag} ${it.country}" } ?: "Secure tunnel"
-        val ping = server?.ping?.takeIf { it > 0 }?.let { " • ${it} ms" }.orEmpty()
+        val stats = buildString {
+            append(country)
+            server?.ping?.takeIf { it > 0 }?.let { append(" • ${it} ms") }
+            server?.quality?.takeIf { it > 0 }?.let { append(" • Q$it") }
+        }
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_awr_vpn_notify)
-            .setContentTitle(title)
-            .setContentText("$country$ping • Tap to open")
+            .setContentTitle("AWR VPN • PROTECTED")
+            .setContentText(stats)
             .setContentIntent(openPi)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -157,7 +180,7 @@ object AwrNotifier {
 class AwrVpnActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action == ACTION_AWR_DISCONNECT) {
-            try { VpnEngine(context.applicationContext).disconnect() } catch (_: Exception) { }
+            runCatching { VpnEngine(context.applicationContext).disconnect() }
             ConnectionStore(context).setConnected(false)
             AwrNotifier.cancel(context)
         }
