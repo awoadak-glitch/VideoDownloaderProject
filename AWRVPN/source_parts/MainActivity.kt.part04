@@ -50,7 +50,7 @@
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
     }
 
-    override fun updateState(state: String?, logmessage: String?, localizedResId: Int, level: ConnectionStatus?) {
+    override fun updateState(state: String?, logmessage: String?, localizedResId: Int, level: ConnectionStatus?, intent: Intent?) {
         runOnUiThread {
             phase = when (level) {
                 ConnectionStatus.LEVEL_CONNECTED -> ConnPhase.ON

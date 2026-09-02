@@ -328,7 +328,7 @@ class VpnEngine(private val context: Context) {
 
     fun startPrepared() {
         val p = pendingProfile ?: error("VPN profile is not prepared")
-        VPNLaunchHelper.startOpenVpn(p, context.applicationContext)
+        VPNLaunchHelper.startOpenVpn(p, context.applicationContext, "AWR user connect", true)
     }
 
     fun disconnect() {
