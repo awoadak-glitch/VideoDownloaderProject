@@ -65,7 +65,7 @@
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         titleRow.addView(TextView(this).apply {
-            text = "${servers.size} LIVE"
+            text = "${servers.size} ROUTES"
             textSize = 11f
             setTextColor(Color.rgb(71, 243, 198))
             setPadding(dp(11), dp(7), dp(11), dp(7))
@@ -90,7 +90,7 @@
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                 setPadding(dp(4), dp(14), dp(4), dp(7))
             })
-            group.take(5).forEach { server ->
+            group.forEach { server ->
                 list.addView(serverRow(server, selected?.id == server.id) {
                     selected = server
                     d.dismiss()

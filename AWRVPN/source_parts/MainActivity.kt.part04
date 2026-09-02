@@ -11,7 +11,7 @@
                 })
             }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(10) })
             addView(TextView(this@MainActivity).apply {
-                text = if (server.ping > 0) "${server.ping} ms" else "LIVE"
+                text = if (server.ping > 0) "${server.ping} ms" else "UNTESTED"
                 textSize = 11f
                 setTextColor(if (server.ping in 1..99) Color.rgb(71, 243, 198) else Color.rgb(169, 187, 201))
             })

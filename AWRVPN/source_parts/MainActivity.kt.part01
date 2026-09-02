@@ -21,7 +21,7 @@
                 runOnUiThread {
                     surface.loadingRepository = false
                     servers = list
-                    if (selected == null || list.none { it.id == selected?.id }) selected = list.firstOrNull()
+                    if (selected == null || list.none { it.id == selected?.id }) selected = ServerRepository.best(list)
                     syncUi()
                     if (showAfter) {
                         if (list.isEmpty()) fail("No servers are available for ${protocol.label}")
