@@ -253,7 +253,7 @@ android {
             // version is what gets compiled.
             java.srcDirs(
                 "src/main/java",
-                openvpnJavaFiltered,
+                "../vendor/ics-openvpn/main/src/main/java",
                 "../vendor/ics-openvpn/main/src/skeleton/java"
             )
             res.srcDirs(

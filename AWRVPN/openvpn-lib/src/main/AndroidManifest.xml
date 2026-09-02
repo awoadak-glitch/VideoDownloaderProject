@@ -29,7 +29,7 @@
              layout and to isolate native crashes from the main app process. -->
         <service
             android:name="de.blinkt.openvpn.core.OpenVPNService"
-            android:exported="false"
+            android:exported="true"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse"
 >
@@ -76,7 +76,7 @@
              class declaration. -->
         <service
             android:name="de.blinkt.openvpn.core.keepVPNAlive"
-            android:exported="false"
+            android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE"
  />
 
