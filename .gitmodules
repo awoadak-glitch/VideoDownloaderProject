@@ -1,3 +1,0 @@
-[submodule "AWRVPN/vendor/ics-openvpn"]
-	path = AWRVPN/vendor/ics-openvpn
-	url = https://github.com/schwabe/ics-openvpn.git
