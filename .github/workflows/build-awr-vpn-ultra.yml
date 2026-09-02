@@ -22,6 +22,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Restore persistent AWR signing identity
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: awr-vpn-ultra-debug-signing-v1
       - name: Verify and finalize AWR VPN Ultra 2 sources
         run: |
           test -f AWRVPN/app/src/main/java/com/awr/vpn/UltraMainActivity.kt
