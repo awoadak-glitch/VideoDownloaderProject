@@ -119,12 +119,12 @@ class AwrVpnSurface(context: Context, private val actions: Actions) : View(conte
         p.typeface = bold
         p.textSize = d(24f)
         p.shader = LinearGradient(d(22f), top, d(145f), top, Color.WHITE, Color.rgb(71, 243, 198), Shader.TileMode.CLAMP)
-        c.drawText("AWR VPN", d(22f), top, p)
+        c.drawText("AWR NEXUS", d(22f), top, p)
         p.shader = null
         p.typeface = medium
         p.textSize = d(8.5f)
         p.color = Color.rgb(105, 130, 148)
-        c.drawText("PRIVATE NETWORK", d(23f), top + d(17f), p)
+        c.drawText("ZERO-TRACE PRIVATE MESH", d(23f), top + d(17f), p)
 
         val vipW = d(94f)
         val vipH = d(36f)

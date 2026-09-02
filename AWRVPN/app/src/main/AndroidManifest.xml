@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
+        android:name=".AwrApplication"
         android:allowBackup="false"
         android:label="AWR VPN"
         android:theme="@style/Theme.AWRVPN"

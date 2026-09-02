@@ -8,6 +8,7 @@ import de.blinkt.openvpn.VpnProfile
 import de.blinkt.openvpn.core.ConfigParser
 import de.blinkt.openvpn.core.OpenVPNService
 import de.blinkt.openvpn.core.ProfileManager
+import de.blinkt.openvpn.core.PrivycsStatusListenerBridge
 import de.blinkt.openvpn.core.VPNLaunchHelper
 import org.json.JSONObject
 import java.io.StringReader
@@ -322,6 +323,7 @@ class VpnEngine(private val context: Context) {
         profile.mName = "AWR • ${data.server.country}"
         profile.mUserEditable = false
         ProfileManager.setTemporaryProfile(context, profile)
+        PrivycsStatusListenerBridge.persistProfileSync(context, profile)
         pendingProfile = profile
         return VpnService.prepare(context)
     }

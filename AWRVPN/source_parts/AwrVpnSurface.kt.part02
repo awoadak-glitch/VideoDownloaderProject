@@ -66,7 +66,7 @@
         p.textSize = d(10.5f)
         p.color = Color.rgb(117, 142, 160)
         val detail = if (!state.vip) "AWR-VIP authorization required" else {
-            val ping = if (state.ping > 0) "${state.ping} ms published" else "Route selected"
+            val ping = if (state.ping > 0) "${state.ping} ms route signal" else "Quantum route selected"
             "$ping  •  ${state.serverCount} available endpoints"
         }
         c.drawText(detail, margin + d(58f), top + d(55f), p)
