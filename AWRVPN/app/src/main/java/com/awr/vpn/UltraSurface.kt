@@ -3,6 +3,8 @@ package com.awr.vpn
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -31,11 +33,19 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
         val autoBest: Boolean = true,
         val downloadBytes: Long = 0L,
         val uploadBytes: Long = 0L,
-        val connectedSeconds: Long = 0L
+        val connectedSeconds: Long = 0L,
+        val quality: Int = 0,
+        val verified: Boolean = false,
+        val source: String = "AWR Secure Repository"
     )
 
     var state = UiState()
-        set(value) { field = value; invalidate() }
+        set(value) {
+            if (field.phase != value.phase) triggerPhaseFlash()
+            field = value
+            invalidate()
+        }
+
     var loadingRepository = false
         set(value) { field = value; invalidate() }
 
@@ -46,34 +56,44 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
     private val medium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     private val regular = Typeface.create("sans-serif", Typeface.NORMAL)
 
-    private var ticker = 0f
+    private var tick = 0f
     private var tapBurst = 0f
+    private var phaseFlash = 0f
+    private var press = 0f
     private var pressedCore = false
+
     private val connectHit = RectF()
     private val serverHit = RectF()
     private val vipHit = RectF()
     private val protocolHit = RectF()
     private val settingsHit = RectF()
 
-    private val stars = List(72) { i ->
-        val x = ((i * 83 + 13) % 991) / 991f
-        val y = ((i * 149 + 31) % 983) / 983f
-        val z = .35f + ((i * 29) % 65) / 100f
-        Triple(x, y, z)
+    private val stars = List(96) { i ->
+        Triple(
+            ((i * 83 + 17) % 997) / 997f,
+            ((i * 151 + 37) % 991) / 991f,
+            .28f + ((i * 31) % 72) / 100f
+        )
     }
 
     init {
         isClickable = true
+        isFocusable = true
         ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 5600L
+            duration = 4400L
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
-            addUpdateListener { ticker = it.animatedValue as Float; invalidate() }
+            addUpdateListener { tick = it.animatedValue as Float; invalidate() }
             start()
         }
     }
 
     private fun d(v: Float) = v * density
+
+    private fun insetTop(): Float {
+        if (Build.VERSION.SDK_INT < 23) return 0f
+        return rootWindowInsets?.stableInsetTop?.toFloat()?.coerceAtMost(d(34f)) ?: 0f
+    }
 
     override fun onDraw(c: Canvas) {
         super.onDraw(c)
@@ -88,205 +108,208 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
         drawBottomNav(c, w, h)
     }
 
+    private fun accent(): Int = when {
+        state.phase == ConnPhase.ON -> Color.rgb(71, 243, 198)
+        state.phase == ConnPhase.ERROR -> Color.rgb(255, 91, 119)
+        state.phase == ConnPhase.FINDING || state.phase == ConnPhase.AUTH || state.phase == ConnPhase.CONNECTING -> Color.rgb(91, 213, 255)
+        state.vip -> Color.rgb(116, 110, 255)
+        else -> Color.rgb(112, 136, 159)
+    }
+
     private fun drawBackground(c: Canvas, w: Float, h: Float) {
         val active = state.phase == ConnPhase.ON
-        val connecting = state.phase == ConnPhase.FINDING || state.phase == ConnPhase.AUTH || state.phase == ConnPhase.CONNECTING
-        val topColor = if (active) Color.rgb(3, 15, 19) else Color.rgb(4, 8, 18)
-        val midColor = if (active) Color.rgb(4, 28, 31) else Color.rgb(6, 17, 31)
-        p.shader = LinearGradient(0f, 0f, 0f, h, intArrayOf(topColor, midColor, Color.rgb(3, 8, 16)), null, Shader.TileMode.CLAMP)
+        val colA = if (active) Color.rgb(2, 16, 20) else Color.rgb(3, 8, 18)
+        val colB = if (active) Color.rgb(3, 33, 34) else Color.rgb(5, 21, 38)
+        p.shader = LinearGradient(0f, 0f, 0f, h, intArrayOf(colA, colB, Color.rgb(2, 7, 14)), floatArrayOf(0f, .52f, 1f), Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, w, h, p); p.shader = null
 
-        val a = ticker * PI.toFloat() * 2f
-        val glow1 = if (active) Color.rgb(29, 235, 187) else Color.rgb(21, 136, 194)
-        val glow2 = if (active) Color.rgb(24, 153, 117) else Color.rgb(91, 72, 210)
-        fun blob(x: Float, y: Float, radius: Float, col: Int, alpha: Int) {
-            p.shader = RadialGradient(x, y, radius, Color.argb(alpha, Color.red(col), Color.green(col), Color.blue(col)), Color.TRANSPARENT, Shader.TileMode.CLAMP)
-            c.drawCircle(x, y, radius, p); p.shader = null
+        val a = tick * PI.toFloat() * 2f
+        fun glow(x: Float, y: Float, r: Float, color: Int, alpha: Int) {
+            p.shader = RadialGradient(x, y, r, Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color)), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            c.drawCircle(x, y, r, p); p.shader = null
         }
-        blob(w * (.17f + .045f * sin(a)), h * .22f, w * .58f, glow1, if (active) 76 else 49)
-        blob(w * (.85f + .035f * cos(a * .72f)), h * .43f, w * .53f, glow2, 44)
-        blob(w * (.52f + .055f * sin(a * .52f)), h * .79f, w * .46f, Color.rgb(21, 91, 140), 35)
+        glow(w * (.13f + .06f * sin(a * .55f)), h * .25f, w * .66f, if (active) Color.rgb(20, 206, 165) else Color.rgb(22, 126, 208), if (active) 70 else 48)
+        glow(w * (.91f + .04f * cos(a * .77f)), h * .43f, w * .60f, Color.rgb(97, 65, 230), 43)
+        glow(w * (.47f + .06f * cos(a * .42f)), h * .78f, w * .52f, if (active) Color.rgb(11, 116, 103) else Color.rgb(10, 73, 137), 38)
+
+        // soft aurora ribbons
+        for (i in 0..2) {
+            val path = Path()
+            val yy = h * (.18f + i * .18f)
+            path.moveTo(-d(20f), yy)
+            path.cubicTo(w * .22f, yy + sin(a + i) * d(45f), w * .68f, yy - cos(a * .7f + i) * d(55f), w + d(20f), yy + d(8f))
+            stroke.strokeWidth = d(14f - i * 3f)
+            stroke.color = Color.argb(9 + i * 3, 81, 220, 226)
+            c.drawPath(path, stroke)
+        }
 
         stars.forEachIndexed { i, s ->
-            val twinkle = ((sin(a * (0.7f + s.third) + i * .83f) + 1f) * .5f)
-            p.color = Color.argb((18 + twinkle * 52).toInt(), 179, 229, 238)
-            c.drawCircle(w * s.first, h * s.second, d(.45f + s.third * 1.15f), p)
-        }
-
-        if (connecting || active) {
-            stroke.strokeWidth = d(.55f)
-            stroke.color = Color.argb(if (active) 27 else 18, 78, 234, 205)
-            for (i in 0..8) {
-                val y = h * .16f + i * d(56f)
-                c.drawLine(d(18f), y, w - d(18f), y + d(14f * sin(a + i)), stroke)
-            }
+            val pulse = ((sin(a * (.6f + s.third) + i * .71f) + 1f) * .5f)
+            p.color = Color.argb((16 + pulse * 62).toInt(), 183, 230, 240)
+            c.drawCircle(w * s.first, h * s.second, d(.35f + s.third * 1.25f), p)
         }
     }
 
     private fun drawHeader(c: Canvas, w: Float) {
+        val top = insetTop()
         p.textAlign = Paint.Align.LEFT
-        p.typeface = bold; p.textSize = d(24f)
-        p.shader = LinearGradient(d(20f), d(31f), d(170f), d(31f), Color.WHITE, Color.rgb(71, 243, 198), Shader.TileMode.CLAMP)
-        c.drawText("AWR VPN", d(21f), d(38f), p); p.shader = null
-        p.typeface = bold; p.textSize = d(7.6f); p.color = Color.rgb(93, 126, 148)
-        c.drawText("ULTRA PRIVATE NETWORK • 2.0", d(22f), d(54f), p)
+        p.typeface = bold; p.textSize = d(23f)
+        p.shader = LinearGradient(d(20f), top + d(34f), d(183f), top + d(34f), intArrayOf(Color.WHITE, Color.rgb(91, 213, 255), Color.rgb(71, 243, 198)), null, Shader.TileMode.CLAMP)
+        c.drawText("AWR VPN", d(21f), top + d(37f), p); p.shader = null
+        p.typeface = bold; p.textSize = d(7.4f); p.color = Color.rgb(91, 126, 149)
+        c.drawText("ULTRA PRIVATE NETWORK  •  2.1", d(22f), top + d(53f), p)
 
-        val bw = d(104f); val bh = d(38f)
-        vipHit.set(w - d(20f) - bw, d(20f), w - d(20f), d(20f) + bh)
-        p.color = if (state.vip) Color.argb(42, 71, 243, 198) else Color.argb(38, 255, 193, 91)
-        c.drawRoundRect(vipHit, d(19f), d(19f), p)
-        stroke.strokeWidth = d(1f)
-        stroke.color = if (state.vip) Color.argb(125, 71, 243, 198) else Color.argb(110, 255, 193, 91)
-        c.drawRoundRect(vipHit, d(19f), d(19f), stroke)
-        p.typeface = bold; p.textSize = d(9.5f); p.textAlign = Paint.Align.CENTER
-        p.color = if (state.vip) Color.rgb(71, 243, 198) else Color.rgb(255, 205, 111)
-        c.drawText(if (state.vip) "✦  VIP ACTIVE" else "✦  UNLOCK VIP", vipHit.centerX(), vipHit.centerY() + d(3.3f), p)
+        val bw = d(108f); val bh = d(38f)
+        vipHit.set(w - d(20f) - bw, top + d(18f), w - d(20f), top + d(18f) + bh)
+        val vipColor = if (state.vip) Color.rgb(71, 243, 198) else Color.rgb(255, 193, 91)
+        p.color = Color.argb(38, Color.red(vipColor), Color.green(vipColor), Color.blue(vipColor)); c.drawRoundRect(vipHit, d(20f), d(20f), p)
+        stroke.strokeWidth = d(1f); stroke.color = Color.argb(135, Color.red(vipColor), Color.green(vipColor), Color.blue(vipColor)); c.drawRoundRect(vipHit, d(20f), d(20f), stroke)
+        p.typeface = bold; p.textSize = d(9.2f); p.textAlign = Paint.Align.CENTER; p.color = vipColor
+        c.drawText(if (state.vip) "✦  VIP ACTIVE" else "✦  UNLOCK VIP", vipHit.centerX(), vipHit.centerY() + d(3.1f), p)
         p.textAlign = Paint.Align.LEFT
     }
 
     private fun drawStatusCapsule(c: Canvas, w: Float, h: Float) {
-        val cx = w / 2f; val y = h * .145f
-        val active = state.phase == ConnPhase.ON
-        val working = state.phase == ConnPhase.FINDING || state.phase == ConnPhase.AUTH || state.phase == ConnPhase.CONNECTING
+        val top = insetTop()
+        val y = max(top + d(93f), h * .135f)
         val text = when (state.phase) {
             ConnPhase.ON -> "●  SECURE TUNNEL ACTIVE"
-            ConnPhase.FINDING -> "◌  ANALYZING BEST ROUTE"
-            ConnPhase.AUTH -> "◌  AUTHORIZING PRIVATE PROFILE"
+            ConnPhase.FINDING -> "◌  MEASURING LIVE ROUTES"
+            ConnPhase.AUTH -> "◌  AUTHORIZING VIP PROFILE"
             ConnPhase.CONNECTING -> "◌  ESTABLISHING ENCRYPTED TUNNEL"
             ConnPhase.ERROR -> "!  CONNECTION INTERRUPTED"
-            ConnPhase.OFF -> if (state.vip) "◦  READY • TAP TO CONNECT" else "⌁  VIP REQUIRED FOR SERVER ACCESS"
+            ConnPhase.OFF -> if (state.vip) "◦  READY • TAP THE CORE" else "⌁  VIP REQUIRED"
         }
-        p.typeface = bold; p.textSize = d(8.8f)
-        val tw = p.measureText(text); val r = RectF(cx - tw / 2 - d(15f), y - d(15f), cx + tw / 2 + d(15f), y + d(9f))
-        val col = when {
-            active -> Color.rgb(71, 243, 198)
-            working -> Color.rgb(106, 210, 241)
-            state.phase == ConnPhase.ERROR -> Color.rgb(255, 114, 124)
-            else -> Color.rgb(142, 166, 181)
-        }
-        p.color = Color.argb(26, Color.red(col), Color.green(col), Color.blue(col)); c.drawRoundRect(r, d(20f), d(20f), p)
-        stroke.strokeWidth = d(.8f); stroke.color = Color.argb(75, Color.red(col), Color.green(col), Color.blue(col)); c.drawRoundRect(r, d(20f), d(20f), stroke)
-        p.textAlign = Paint.Align.CENTER; p.color = col; c.drawText(text, cx, y + d(1f), p); p.textAlign = Paint.Align.LEFT
+        val col = accent()
+        p.typeface = bold; p.textSize = d(8.7f)
+        val tw = p.measureText(text)
+        val r = RectF(w/2 - tw/2 - d(16f), y-d(15f), w/2 + tw/2 + d(16f), y+d(10f))
+        p.color = Color.argb(28 + (phaseFlash * 35).toInt(), Color.red(col), Color.green(col), Color.blue(col)); c.drawRoundRect(r, d(20f), d(20f), p)
+        stroke.strokeWidth = d(.8f); stroke.color = Color.argb(82 + (phaseFlash*80).toInt(), Color.red(col), Color.green(col), Color.blue(col)); c.drawRoundRect(r, d(20f), d(20f), stroke)
+        p.textAlign = Paint.Align.CENTER; p.color = col; c.drawText(text, w/2, y+d(1.5f), p); p.textAlign = Paint.Align.LEFT
     }
 
     private fun drawHero(c: Canvas, w: Float, h: Float) {
-        val cx = w / 2f; val cy = h * .365f
-        val a = ticker * PI.toFloat() * 2f
-        val active = state.phase == ConnPhase.ON
+        val top = insetTop()
+        val cx = w/2f
+        val cy = max(top + d(264f), h * .365f)
+        val a = tick * PI.toFloat() * 2f
         val working = state.phase == ConnPhase.FINDING || state.phase == ConnPhase.AUTH || state.phase == ConnPhase.CONNECTING
-        val powered = active || working
-        val accent = when {
-            active -> Color.rgb(71, 243, 198)
-            state.phase == ConnPhase.ERROR -> Color.rgb(255, 108, 120)
-            state.vip -> Color.rgb(83, 199, 235)
-            else -> Color.rgb(128, 149, 165)
+        val active = state.phase == ConnPhase.ON
+        val powered = working || active
+        val col = accent()
+
+        // reactor halo
+        val haloPulse = .5f + .5f * sin(a * if (active) 1.8f else 1.1f)
+        p.shader = RadialGradient(cx, cy, d(180f), Color.argb((44 + 28*haloPulse).toInt(), Color.red(col), Color.green(col), Color.blue(col)), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, d(180f), p); p.shader = null
+
+        // concentric radar rings
+        for (i in 0..5) {
+            val pulse = if (powered) sin(a * (1f + i*.08f) + i*.7f) * d(3.8f) else 0f
+            val rr = d(96f + i*14f) + pulse
+            stroke.strokeWidth = d(if (i==0) 1.7f else .65f)
+            stroke.color = Color.argb((91 - i*11).coerceAtLeast(20), Color.red(col), Color.green(col), Color.blue(col))
+            c.drawCircle(cx, cy, rr, stroke)
         }
 
-        // animated portal rings
+        // rotating segmented rings
         for (i in 0..4) {
-            val pulse = if (powered) sin(a * (1f + i * .04f) + i) * d(3.4f) else 0f
-            val r = d(102f + i * 14f) + pulse
-            stroke.style = Paint.Style.STROKE
-            stroke.strokeWidth = d(if (i == 0) 1.5f else .65f)
-            stroke.color = Color.argb((82 - i * 12).coerceAtLeast(18), Color.red(accent), Color.green(accent), Color.blue(accent))
-            c.drawCircle(cx, cy, r, stroke)
-        }
-
-        // rotating arcs
-        for (i in 0..3) {
-            val r = d(121f + i * 11f)
-            val rect = RectF(cx-r, cy-r, cx+r, cy+r)
-            stroke.strokeWidth = d(2.1f - i * .25f)
-            stroke.strokeCap = Paint.Cap.ROUND
-            stroke.color = Color.argb(if (powered) 130 - i * 20 else 48, Color.red(accent), Color.green(accent), Color.blue(accent))
-            c.drawArc(rect, a * 57.2958f * (if (i % 2 == 0) 1f else -1f) + i * 70f, 38f + i * 8f, false, stroke)
+            val rr = d(118f + i*11f)
+            val rect = RectF(cx-rr, cy-rr, cx+rr, cy+rr)
+            val dir = if (i%2==0) 1f else -1f
+            val speed = if (working) 2.1f else if (active) 1.35f else .45f
+            stroke.strokeWidth = d(2.6f - i*.32f); stroke.strokeCap = Paint.Cap.ROUND
+            stroke.color = Color.argb(if(powered) 150-i*20 else 58-i*7, Color.red(col), Color.green(col), Color.blue(col))
+            c.drawArc(rect, a*57.2958f*dir*speed+i*57f, 24f+i*9f, false, stroke)
         }
         stroke.strokeCap = Paint.Cap.BUTT
 
         if (powered) {
-            for (i in 0..5) {
-                val aa = a * (if (i % 2 == 0) 1f else -.72f) + i * 1.047f
-                val r = d(126f + (i % 3) * 13f)
-                val x = cx + cos(aa) * r; val y = cy + sin(aa) * r
-                p.color = Color.argb(220, Color.red(accent), Color.green(accent), Color.blue(accent))
-                c.drawCircle(x, y, d(2.1f + (i % 2)), p)
+            for (i in 0..9) {
+                val aa = a * (if(i%2==0) 1.15f else -.83f) + i * .628f
+                val rr = d(121f + (i%4)*10f)
+                val x = cx + cos(aa)*rr; val y = cy + sin(aa)*rr
+                p.color = Color.argb(225, Color.red(col), Color.green(col), Color.blue(col))
+                c.drawCircle(x, y, d(1.7f + (i%3)*.7f), p)
             }
         }
 
-        // central glass sphere
-        val sphere = d(94f)
-        p.shader = RadialGradient(cx - d(25f), cy - d(30f), sphere * 1.45f,
-            intArrayOf(lighten(accent, if (active) .08f else .03f), Color.rgb(9, 35, 48), Color.rgb(4, 14, 25)),
-            floatArrayOf(0f, .48f, 1f), Shader.TileMode.CLAMP)
+        // glass globe
+        val sphere = d(92f) * (1f - press*.055f)
+        p.shader = RadialGradient(cx-d(28f), cy-d(33f), sphere*1.6f,
+            intArrayOf(lighten(col, .24f), Color.rgb(9, 39, 52), Color.rgb(3, 14, 25)),
+            floatArrayOf(0f,.44f,1f), Shader.TileMode.CLAMP)
         c.drawCircle(cx, cy, sphere, p); p.shader = null
-        stroke.strokeWidth = d(1.2f); stroke.color = Color.argb(105, Color.red(accent), Color.green(accent), Color.blue(accent)); c.drawCircle(cx, cy, sphere, stroke)
+        stroke.strokeWidth = d(1.25f); stroke.color = Color.argb(120, Color.red(col), Color.green(col), Color.blue(col)); c.drawCircle(cx, cy, sphere, stroke)
 
-        val clipped = c.save()
-        c.clipPath(Path().apply { addCircle(cx, cy, sphere - d(1f), Path.Direction.CW) })
-        stroke.strokeWidth = d(.75f); stroke.color = Color.argb(39, 126, 225, 223)
-        for (i in -2..2) {
-            val yy = cy + i * d(24f)
-            c.drawOval(RectF(cx-sphere, yy-d(11f), cx+sphere, yy+d(11f)), stroke)
+        val save = c.save()
+        c.clipPath(Path().apply { addCircle(cx,cy,sphere-d(1f),Path.Direction.CW) })
+        stroke.strokeWidth = d(.7f); stroke.color = Color.argb(45, 150, 231, 232)
+        for(i in -2..2) {
+            val yy = cy+i*d(23f)
+            c.drawOval(RectF(cx-sphere,yy-d(10f),cx+sphere,yy+d(10f)),stroke)
         }
-        for (i in -2..2) {
-            val ww = sphere * (.24f + abs(i) * .22f)
-            c.drawOval(RectF(cx-ww, cy-sphere, cx+ww, cy+sphere), stroke)
+        for(i in -2..2) {
+            val ww = sphere*(.25f+abs(i)*.21f)
+            c.drawOval(RectF(cx-ww,cy-sphere,cx+ww,cy+sphere),stroke)
         }
-        // moving route on globe
-        val routeShift = sin(a) * d(6f)
-        val path = Path().apply {
-            moveTo(cx-d(74f), cy+d(27f))
-            cubicTo(cx-d(45f), cy-d(57f)+routeShift, cx+d(45f), cy-d(51f)-routeShift, cx+d(76f), cy+d(12f))
+        // animated secure route arc
+        val route = Path().apply {
+            moveTo(cx-d(74f),cy+d(29f))
+            cubicTo(cx-d(42f),cy-d(58f)+sin(a)*d(7f),cx+d(44f),cy-d(54f)-sin(a)*d(7f),cx+d(76f),cy+d(16f))
         }
-        stroke.strokeWidth = d(2.2f); stroke.color = Color.argb(if (active) 195 else 105, 71, 243, 198); c.drawPath(path, stroke)
-        c.restoreToCount(clipped)
+        stroke.strokeWidth=d(2.35f);stroke.color=Color.argb(if(active)225 else 130,71,243,198);c.drawPath(route,stroke)
+        if(active){
+            val px=cx-d(70f)+((tick*150f)%140f).coerceIn(0f,140f)
+            p.color=Color.WHITE;c.drawCircle(px,cy-d(35f)+sin((px-cx)/d(45f))*d(14f),d(2.3f),p)
+        }
+        c.restoreToCount(save)
 
-        // tap shockwave
-        if (tapBurst > 0f) {
-            val rr = d(63f + 72f * tapBurst)
-            stroke.strokeWidth = d(3f * (1f - tapBurst) + .5f)
-            stroke.color = Color.argb((180 * (1f - tapBurst)).toInt(), 71, 243, 198)
-            c.drawCircle(cx, cy, rr, stroke)
-            for (i in 0 until 10) {
-                val aa = i * PI.toFloat() / 5f + a * .3f
-                val r1 = d(63f + 28f * tapBurst); val r2 = r1 + d(12f * (1f - tapBurst))
-                stroke.strokeWidth = d(1.5f); stroke.color = Color.argb((160 * (1f - tapBurst)).toInt(), 111, 235, 220)
-                c.drawLine(cx+cos(aa)*r1, cy+sin(aa)*r1, cx+cos(aa)*r2, cy+sin(aa)*r2, stroke)
+        // press/tap explosion
+        if(tapBurst>0f){
+            for(i in 0..2){
+                val t=(tapBurst-i*.16f).coerceIn(0f,1f)
+                if(t<=0f) continue
+                val rr=d(58f+115f*t)
+                stroke.strokeWidth=d(3.2f*(1f-t)+.45f)
+                stroke.color=Color.argb((210*(1f-t)).toInt(),Color.red(col),Color.green(col),Color.blue(col))
+                c.drawCircle(cx,cy,rr,stroke)
             }
         }
 
-        val coreScale = if (pressedCore) .92f else 1f
-        val coreR = d(57f) * coreScale
-        val pulse = if (powered) ((sin(a * 1.65f)+1f)*.5f) else .08f
-        p.color = Color.argb((24 + 38*pulse).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent)); c.drawCircle(cx, cy, coreR+d(18f+9f*pulse), p)
-        p.shader = RadialGradient(cx-d(15f), cy-d(18f), coreR*1.45f, lighten(accent,.22f), darken(accent,.42f), Shader.TileMode.CLAMP)
-        c.drawCircle(cx, cy, coreR, p); p.shader = null
-        connectHit.set(cx-coreR-d(7f), cy-coreR-d(7f), cx+coreR+d(7f), cy+coreR+d(7f))
-        drawPower(c, cx, cy-d(5f), Color.rgb(4, 21, 27))
-        p.textAlign = Paint.Align.CENTER; p.typeface = bold; p.textSize = d(9f); p.color = Color.argb(210, 3, 19, 24)
-        c.drawText(if (active) "DISCONNECT" else if (working) "CANCEL" else "CONNECT", cx, cy+d(37f), p)
+        // core button
+        val coreR=d(57f)*(1f-press*.075f)
+        val corePulse=if(powered) .5f+.5f*sin(a*1.7f) else .12f
+        p.color=Color.argb((28+44*corePulse).toInt(),Color.red(col),Color.green(col),Color.blue(col));c.drawCircle(cx,cy,coreR+d(20f+9f*corePulse),p)
+        p.shader=RadialGradient(cx-d(15f),cy-d(18f),coreR*1.5f,lighten(col,.28f),darken(col,.48f),Shader.TileMode.CLAMP)
+        c.drawCircle(cx,cy,coreR,p);p.shader=null
+        connectHit.set(cx-coreR-d(9f),cy-coreR-d(9f),cx+coreR+d(9f),cy+coreR+d(9f))
+        drawPower(c,cx,cy-d(5f),Color.rgb(3,19,25))
+        p.textAlign=Paint.Align.CENTER;p.typeface=bold;p.textSize=d(8.8f);p.color=Color.argb(220,3,18,23)
+        c.drawText(if(active)"DISCONNECT" else if(working)"CANCEL" else "CONNECT",cx,cy+d(37f),p)
 
-        p.typeface = medium; p.textSize = d(10.5f); p.color = if (active) Color.rgb(124, 242, 213) else Color.rgb(132, 158, 176)
-        val sub = when {
-            state.phase == ConnPhase.ERROR && state.error.isNotBlank() -> state.error.take(46)
-            active -> "Encrypted • ${formatDuration(state.connectedSeconds)} • ${state.flag} ${state.server.take(22)}"
-            state.autoBest && state.vip -> "SMART ROUTE is ready to choose the strongest endpoint"
-            !state.vip -> "Activate VIP to unlock the private server vault"
-            else -> "Touch the core to create a protected tunnel"
+        p.typeface=medium;p.textSize=d(10.3f);p.color=if(active)Color.rgb(125,244,215) else Color.rgb(140,166,183)
+        val sub=when{
+            state.phase==ConnPhase.ERROR&&state.error.isNotBlank()->state.error.take(52)
+            active->"Protected • ${formatDuration(state.connectedSeconds)} • ${state.flag} ${state.server.take(24)}"
+            working->"AWR is selecting and negotiating a live encrypted route"
+            state.autoBest&&state.vip->"SMART ROUTE • live quality scoring ready"
+            !state.vip->"Activate VIP to unlock the secure route vault"
+            else->"Touch the reactor to connect"
         }
-        c.drawText(sub, cx, cy+d(128f), p); p.textAlign = Paint.Align.LEFT
+        c.drawText(sub,cx,cy+d(127f),p);p.textAlign=Paint.Align.LEFT
     }
 
-    private fun drawLiveRail(c: Canvas, w: Float, h: Float) {
-        val top = h * .575f; val margin = d(20f); val gap = d(7f)
-        val cardW = (w-margin*2-gap*2)/3f; val cardH = d(66f)
-        fun card(i:Int, label:String, value:String, sub:String, accent:Int, hit:RectF?=null) {
-            val x=margin+i*(cardW+gap); val r=RectF(x,top,x+cardW,top+cardH)
-            p.color=Color.argb(188,8,23,37); c.drawRoundRect(r,d(18f),d(18f),p)
-            stroke.strokeWidth=d(.8f); stroke.color=Color.argb(78,52,82,98); c.drawRoundRect(r,d(18f),d(18f),stroke)
-            p.typeface=bold; p.textSize=d(7.2f); p.color=Color.rgb(92,123,143); c.drawText(label,x+d(11f),top+d(17f),p)
-            p.typeface=bold; p.textSize=d(12.4f); p.color=accent; c.drawText(value,x+d(11f),top+d(39f),p)
-            p.typeface=regular; p.textSize=d(7.5f); p.color=Color.rgb(84,110,129); c.drawText(sub,x+d(11f),top+d(54f),p)
+    private fun drawLiveRail(c:Canvas,w:Float,h:Float){
+        val top=h*.575f;val margin=d(20f);val gap=d(7f);val cardW=(w-margin*2-gap*2)/3f;val cardH=d(68f)
+        fun card(i:Int,label:String,value:String,sub:String,accent:Int,hit:RectF?=null){
+            val x=margin+i*(cardW+gap);val r=RectF(x,top,x+cardW,top+cardH)
+            p.color=Color.argb(205,7,22,36);c.drawRoundRect(r,d(19f),d(19f),p)
+            stroke.strokeWidth=d(.8f);stroke.color=Color.argb(82,52,85,101);c.drawRoundRect(r,d(19f),d(19f),stroke)
+            p.typeface=bold;p.textSize=d(7f);p.color=Color.rgb(92,124,145);c.drawText(label,x+d(11f),top+d(17f),p)
+            p.typeface=bold;p.textSize=d(12.3f);p.color=accent;c.drawText(value,x+d(11f),top+d(40f),p)
+            p.typeface=regular;p.textSize=d(7.2f);p.color=Color.rgb(82,111,130);c.drawText(sub,x+d(11f),top+d(56f),p)
             hit?.set(r)
         }
         card(0,"DOWNLOAD",formatBytes(state.downloadBytes),if(state.phase==ConnPhase.ON)"protected traffic" else "session total",Color.rgb(111,219,244))
@@ -294,53 +317,75 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
         card(2,"PROTOCOL",state.protocol,if(state.autoBest)"SMART route" else "manual route",Color.WHITE,protocolHit)
     }
 
-    private fun drawServerCard(c: Canvas, w: Float, h: Float) {
-        val margin=d(20f); val top=h*.68f; val bottom=min(h-d(105f),top+d(112f))
+    private fun drawServerCard(c:Canvas,w:Float,h:Float){
+        val margin=d(20f);val top=h*.68f;val bottom=min(h-d(104f),top+d(116f))
         serverHit.set(margin,top,w-margin,bottom)
-        p.color=Color.argb(205,8,22,36); c.drawRoundRect(serverHit,d(24f),d(24f),p)
-        stroke.strokeWidth=d(1f); stroke.color=if(state.vip) Color.argb(82,71,243,198) else Color.argb(80,255,197,94); c.drawRoundRect(serverHit,d(24f),d(24f),stroke)
-        p.textSize=d(31f); c.drawText(state.flag,margin+d(16f),top+d(48f),p)
-        p.typeface=bold; p.textSize=d(8f); p.color=if(state.autoBest) Color.rgb(71,243,198) else Color.rgb(122,151,170)
-        c.drawText(if(state.autoBest)"⚡ SMART ROUTE" else "MANUAL SERVER",margin+d(62f),top+d(20f),p)
-        p.typeface=medium; p.textSize=d(15.2f); p.color=Color.WHITE; c.drawText(state.server.take(28),margin+d(62f),top+d(43f),p)
-        p.typeface=regular; p.textSize=d(10f); p.color=Color.rgb(116,144,162)
-        val detail=if(!state.vip)"AWR-VIP authorization required" else "${if(state.ping>0)"${state.ping} ms" else "Live quality"}  •  ${state.serverCount} VIP endpoints  •  ${state.dns} DNS"
-        c.drawText(detail,margin+d(62f),top+d(64f),p)
-        val label=if(loadingRepository)"SCANNING…" else if(state.vip)"SELECT  ›" else "UNLOCK  ›"
-        p.typeface=bold; p.textSize=d(9f); p.color=if(state.vip)Color.rgb(71,243,198) else Color.rgb(255,205,111); p.textAlign=Paint.Align.RIGHT
-        c.drawText(label,w-margin-d(15f),top+d(44f),p); p.textAlign=Paint.Align.LEFT
-    }
-
-    private fun drawBottomNav(c: Canvas,w:Float,h:Float) {
-        val margin=d(16f); val top=h-d(80f); val bar=RectF(margin,top,w-margin,h-d(14f))
-        p.color=Color.argb(232,5,17,29); c.drawRoundRect(bar,d(25f),d(25f),p)
-        stroke.strokeWidth=d(.8f); stroke.color=Color.argb(82,42,70,87); c.drawRoundRect(bar,d(25f),d(25f),stroke)
-        val labels=arrayOf("HOME","SERVERS","VIP","CONTROL"); val icons=arrayOf("⌂","◎","✦","⚙"); val cell=bar.width()/4f
-        for(i in 0..3){
-            val cx=bar.left+cell*(i+.5f); p.textAlign=Paint.Align.CENTER; p.typeface=medium; p.textSize=d(16f)
-            p.color=when(i){0->Color.rgb(71,243,198);2->if(state.vip)Color.rgb(71,243,198) else Color.rgb(255,205,111);else->Color.rgb(117,145,164)}
-            c.drawText(icons[i],cx,top+d(26f),p); p.typeface=bold; p.textSize=d(7.2f); p.color=if(i==0)Color.rgb(71,243,198) else Color.rgb(91,117,136); c.drawText(labels[i],cx,top+d(48f),p)
+        p.color=Color.argb(215,7,22,36);c.drawRoundRect(serverHit,d(25f),d(25f),p)
+        val col=if(state.vip)Color.rgb(71,243,198) else Color.rgb(255,199,96)
+        stroke.strokeWidth=d(1f);stroke.color=Color.argb(90,Color.red(col),Color.green(col),Color.blue(col));c.drawRoundRect(serverHit,d(25f),d(25f),stroke)
+        p.textSize=d(31f);c.drawText(state.flag,margin+d(16f),top+d(50f),p)
+        p.typeface=bold;p.textSize=d(7.8f);p.color=if(state.autoBest)Color.rgb(71,243,198) else Color.rgb(125,153,171)
+        c.drawText(if(state.autoBest)"⚡ SMART ROUTE" else "MANUAL ROUTE",margin+d(62f),top+d(19f),p)
+        p.typeface=medium;p.textSize=d(15.3f);p.color=Color.WHITE;c.drawText(state.server.take(28),margin+d(62f),top+d(43f),p)
+        p.typeface=regular;p.textSize=d(9.3f);p.color=Color.rgb(115,145,163)
+        val status=when{
+            !state.vip->"AWR-VIP authorization required"
+            state.serverCount<=0->"Refreshing secure route catalog…"
+            else->"${if(state.ping>0)"${state.ping} ms" else "LIVE"} • ${state.serverCount} endpoints • ${state.dns} DNS"
         }
-        settingsHit.set(bar.left+cell*3,bar.top,bar.right,bar.bottom); p.textAlign=Paint.Align.LEFT
+        c.drawText(status,margin+d(62f),top+d(63f),p)
+        if(state.vip){
+            val badge=if(state.verified)"✓ VERIFIED  •  Q${state.quality}" else "LIVE  •  Q${state.quality}"
+            p.typeface=bold;p.textSize=d(7.5f);p.color=if(state.verified)Color.rgb(101,231,201) else Color.rgb(118,166,190)
+            c.drawText(badge,margin+d(62f),top+d(84f),p)
+            p.typeface=regular;p.textSize=d(6.8f);p.color=Color.rgb(75,105,124);c.drawText(state.source.take(35),margin+d(62f),top+d(101f),p)
+        }
+        val label=if(loadingRepository)"SCANNING…" else if(state.vip)"VAULT  ›" else "UNLOCK  ›"
+        p.typeface=bold;p.textSize=d(8.8f);p.color=col;p.textAlign=Paint.Align.RIGHT;c.drawText(label,w-margin-d(14f),top+d(44f),p);p.textAlign=Paint.Align.LEFT
     }
 
-    private fun drawPower(c: Canvas,cx:Float,cy:Float,color:Int){
-        stroke.color=color; stroke.strokeWidth=d(4.1f); stroke.strokeCap=Paint.Cap.ROUND; val r=d(18f); val rect=RectF(cx-r,cy-r,cx+r,cy+r)
-        c.drawArc(rect,-48f,276f,false,stroke); c.drawLine(cx,cy-d(27f),cx,cy-d(5f),stroke); stroke.strokeCap=Paint.Cap.BUTT
+    private fun drawBottomNav(c:Canvas,w:Float,h:Float){
+        val margin=d(16f);val top=h-d(79f);val bar=RectF(margin,top,w-margin,h-d(13f))
+        p.color=Color.argb(238,4,16,28);c.drawRoundRect(bar,d(26f),d(26f),p)
+        stroke.strokeWidth=d(.8f);stroke.color=Color.argb(86,42,73,89);c.drawRoundRect(bar,d(26f),d(26f),stroke)
+        val labels=arrayOf("HOME","SERVERS","VIP","CONTROL");val icons=arrayOf("⌂","◎","✦","⚙");val cell=bar.width()/4f
+        for(i in 0..3){
+            val x=bar.left+cell*(i+.5f);p.textAlign=Paint.Align.CENTER;p.typeface=medium;p.textSize=d(16f)
+            p.color=when(i){0->Color.rgb(71,243,198);2->if(state.vip)Color.rgb(71,243,198) else Color.rgb(255,205,111);else->Color.rgb(117,148,166)}
+            c.drawText(icons[i],x,top+d(26f),p);p.typeface=bold;p.textSize=d(7f);p.color=if(i==0)Color.rgb(71,243,198) else Color.rgb(91,120,138);c.drawText(labels[i],x,top+d(49f),p)
+        }
+        settingsHit.set(bar.left+cell*3,bar.top,bar.right,bar.bottom);p.textAlign=Paint.Align.LEFT
+    }
+
+    private fun drawPower(c:Canvas,cx:Float,cy:Float,color:Int){
+        stroke.color=color;stroke.strokeWidth=d(4.2f);stroke.strokeCap=Paint.Cap.ROUND;val r=d(18f);val rect=RectF(cx-r,cy-r,cx+r,cy+r)
+        c.drawArc(rect,-48f,276f,false,stroke);c.drawLine(cx,cy-d(27f),cx,cy-d(5f),stroke);stroke.strokeCap=Paint.Cap.BUTT
     }
 
     private fun triggerTapBurst(){
-        ValueAnimator.ofFloat(0f,1f).apply{duration=680L;interpolator=DecelerateInterpolator();addUpdateListener{tapBurst=it.animatedValue as Float;invalidate()};start()}
+        ValueAnimator.ofFloat(0f,1f).apply{duration=760L;interpolator=DecelerateInterpolator();addUpdateListener{tapBurst=it.animatedValue as Float;invalidate()};start()}
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean {
+    private fun triggerPhaseFlash(){
+        ValueAnimator.ofFloat(1f,0f).apply{duration=650L;interpolator=DecelerateInterpolator();addUpdateListener{phaseFlash=it.animatedValue as Float;invalidate()};start()}
+    }
+
+    private fun animatePress(target:Float){
+        val from=press
+        ValueAnimator.ofFloat(from,target).apply{duration=if(target>from)100L else 190L;interpolator=DecelerateInterpolator();addUpdateListener{press=it.animatedValue as Float;invalidate()};start()}
+    }
+
+    override fun onTouchEvent(event:MotionEvent):Boolean{
         val inside=connectHit.contains(event.x,event.y)
         when(event.action){
-            MotionEvent.ACTION_DOWN->{ if(inside){pressedCore=true;invalidate()}; return true }
-            MotionEvent.ACTION_CANCEL->{pressedCore=false;invalidate();return true}
+            MotionEvent.ACTION_DOWN->{
+                if(inside){pressedCore=true;animatePress(1f);performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)}
+                return true
+            }
+            MotionEvent.ACTION_CANCEL->{pressedCore=false;animatePress(0f);return true}
             MotionEvent.ACTION_UP->{
-                val x=event.x; val y=event.y; val wasCore=pressedCore&&inside; pressedCore=false
-                if(wasCore){triggerTapBurst();actions.onConnect()}
+                val x=event.x;val y=event.y;val core=pressedCore&&inside;pressedCore=false;animatePress(0f)
+                if(core){triggerTapBurst();actions.onConnect()}
                 else when{
                     vipHit.contains(x,y)->actions.onVip()
                     serverHit.contains(x,y)->actions.onServer()
@@ -357,13 +402,14 @@ class UltraSurface(context: Context, private val actions: Actions) : View(contex
 
     override fun performClick():Boolean{super.performClick();return true}
 
-    private fun formatBytes(v:Long):String = when {
-        v>=1_073_741_824L -> String.format("%.1f GB",v/1_073_741_824.0)
-        v>=1_048_576L -> String.format("%.1f MB",v/1_048_576.0)
-        v>=1024L -> String.format("%.0f KB",v/1024.0)
-        else -> "$v B"
+    private fun formatBytes(v:Long):String=when{
+        v>=1_073_741_824L->String.format("%.1f GB",v/1_073_741_824.0)
+        v>=1_048_576L->String.format("%.1f MB",v/1_048_576.0)
+        v>=1024L->String.format("%.0f KB",v/1024.0)
+        else->"$v B"
     }
-    private fun formatDuration(sec:Long):String{val h=sec/3600;val m=(sec%3600)/60;val s=sec%60;return if(h>0)String.format("%02d:%02d:%02d",h,m,s) else String.format("%02d:%02d",m,s)}
+
+    private fun formatDuration(sec:Long):String{val hh=sec/3600;val mm=(sec%3600)/60;val ss=sec%60;return if(hh>0)String.format("%02d:%02d:%02d",hh,mm,ss) else String.format("%02d:%02d",mm,ss)}
     private fun lighten(color:Int,f:Float)=Color.rgb((Color.red(color)+(255-Color.red(color))*f).toInt().coerceIn(0,255),(Color.green(color)+(255-Color.green(color))*f).toInt().coerceIn(0,255),(Color.blue(color)+(255-Color.blue(color))*f).toInt().coerceIn(0,255))
     private fun darken(color:Int,f:Float)=Color.rgb((Color.red(color)*(1f-f)).toInt().coerceIn(0,255),(Color.green(color)*(1f-f)).toInt().coerceIn(0,255),(Color.blue(color)*(1f-f)).toInt().coerceIn(0,255))
 }
