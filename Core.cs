@@ -38,7 +38,7 @@ namespace AwrNext {
   public static JavaScriptSerializer Json() { return new JavaScriptSerializer { MaxJsonLength=16*1024*1024, RecursionLimit=80 }; }
   public static string SafeName(string name) {
    if(String.IsNullOrWhiteSpace(name)) name="download.bin";
-   name=Path.GetFileName(name.Replace('\\','/'));
+   name=name.Replace('\\','/'); int slash=name.LastIndexOf('/'); if(slash>=0)name=name.Substring(slash+1);
    name=Regex.Replace(name,@"[<>:""/\\|?*\x00-\x1f]","_").Trim().TrimEnd('.');
    if(name.Length>180) name=name.Substring(0,140)+Path.GetExtension(name).Substring(0,Math.Min(Path.GetExtension(name).Length,35));
    if(name.Length==0) name="download.bin";
