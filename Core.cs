@@ -109,7 +109,7 @@ namespace AwrNext {
    process.OutputDataReceived+=(s,e)=>{};process.ErrorDataReceived+=(s,e)=>{};process.BeginOutputReadLine();process.BeginErrorReadLine();
    http=new HttpClient(new HttpClientHandler{UseProxy=false}){Timeout=TimeSpan.FromSeconds(8)};
    Exception last=null;
-   for(int i=0;i<50;i++){try{await Call("getVersion");try{File.Delete(cfg);}catch{}return;}catch(Exception e){last=e;await Task.Delay(100);if(process.HasExited)break;}}
+   for(int i=0;i<50;i++){try{await Call("getVersion");try{File.Delete(cfg);}catch{}return;}catch(Exception e){last=e;}if(process.HasExited)break;await Task.Delay(100);}
    throw new Exception("Download engine did not start. "+(last==null?"":last.Message));
   }
   public async Task<object> Call(string method,params object[] args) {
