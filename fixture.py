@@ -1,5 +1,6 @@
-import http.server, socketserver, time, re, socket, json, hashlib, pathlib, threading
-DATA=bytes(range(256))*98304
+import http.server, socketserver, time, re, socket, json, hashlib, pathlib, threading, random
+# Distinct bytes across every segment expose misplaced/overlapping range writes.
+DATA=random.Random(20261021).randbytes(24*1024*1024)
 VERSION=1
 DROPPED=False
 RANGES=0

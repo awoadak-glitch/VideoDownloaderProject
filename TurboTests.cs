@@ -65,6 +65,9 @@ class TurboTests {
     if(path=="tail")Check(j.Redistributions>0&&j.CompletedParts==j.PartCount,"idle connections split the live slow tail without overlapping bytes");
    }finally{test.Close().GetAwaiter().GetResult();}
   }
+  m=await New("split-resume");DownloadJob splitJob;
+  try{splitJob=m.Enqueue(url+"/tail",Path.Combine(root,"files"),"split-resume.bin",4,sha);await Until(m,splitJob,()=>splitJob.Redistributions>0);await m.Pause(splitJob);Check(splitJob.Status=="Paused"&&File.Exists(splitJob.Part+".awrmap"),"live-split progress can be paused and checkpointed");}finally{m.Close().GetAwaiter().GetResult();}
+  m=await New("split-resume");try{var j=m.State.Jobs.Single();m.Resume(j);await Until(m,j,()=>j.Status=="Complete"||j.Status=="Error");Check(j.Status=="Complete"&&Util.Hash(j.Target)==sha,"reopening a live-split resume map preserves all original bytes");}finally{m.Close().GetAwaiter().GetResult();}
   m=await New("line-is-not-cap","Adaptive");try{
    var j=m.Enqueue(url+"/benchmark",Path.Combine(root,"bench"),"no-line-cap.bin",128);j.LineMbps=1;
    var fast=Stopwatch.StartNew();await Until(m,j,()=>j.PeakConnections>=32||j.Status=="Error",15);
