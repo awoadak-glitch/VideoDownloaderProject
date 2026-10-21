@@ -37,6 +37,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     if start>=len(data):
      self.send_response(416);self.send_header("Content-Range","bytes */%d"%len(data));self.send_header("Content-Length","0");self.end_headers();return
     RANGES+=1
+  if path=="/delayed-headers" and rang!="bytes=0-0":time.sleep(4)
   if path=="/busy" and rang!="bytes=0-0":
    with LOCK:
     limited=BUSY<2

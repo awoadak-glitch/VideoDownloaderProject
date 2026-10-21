@@ -63,7 +63,7 @@ namespace AwrNext {
   TurboMap map;FileStream file;Task running;string status="active",error="",note="";
   int desired,maximum,active,peak,retries,failuresSinceTune,stalledWindows;
   long done,speed,previousDone;double previousRate=-1,bestRate;int previousCount,bestCount;
-  DateTime notBefore=DateTime.MinValue,lastTune=DateTime.UtcNow,lastSave=DateTime.UtcNow;
+  DateTime notBefore=DateTime.MinValue,lastTune=DateTime.UtcNow,lastSave=DateTime.UtcNow,lastGrowth=DateTime.UtcNow;
   bool plateau=false;readonly Stopwatch clock=Stopwatch.StartNew();double lastSample;
   public TurboTransfer(DownloadJob j,TurboEngine e){job=j;engine=e;}
   public void Start(){running=Task.Run((Func<Task>)Run);}
@@ -131,6 +131,8 @@ namespace AwrNext {
    speed=(long)(speed==0?rate:0.45*rate+0.55*speed);previousDone=done;lastSample=now;
    if(job.EngineMode=="Fixed"||DateTime.UtcNow-lastTune<TimeSpan.FromSeconds(3)||stop.IsCancellationRequested)return;
    lastTune=DateTime.UtcNow;
+   if(speed<=0){note="Turbo: waiting for the server's first file bytes.";return;}
+   if(active<desired&&requests.Count>active&&DateTime.UtcNow-lastGrowth<TimeSpan.FromSeconds(25)){note="Turbo: allowing new connections to finish negotiation before comparing speed.";return;}
    if(speed>bestRate){bestRate=speed;bestCount=desired;}
    if(failuresSinceTune>0){failuresSinceTune=0;previousRate=-1;plateau=false;return;}
    double target=job.LineMbps*1000000.0/8;
@@ -143,7 +145,7 @@ namespace AwrNext {
     note="Turbo: connection growth stopped after a throughput plateau.";return;
    }
    stalledWindows=0;
-   if(desired<maximum){previousRate=Math.Max(1,speed);previousCount=desired;desired=Math.Min(maximum,desired*2);note="Turbo: throughput improved; testing "+desired+" connections.";}
+   if(desired<maximum){previousRate=Math.Max(1,speed);previousCount=desired;desired=Math.Min(maximum,desired*2);lastGrowth=DateTime.UtcNow;note="Turbo: throughput improved; testing "+desired+" connections.";}
    else note="Turbo: using the configured maximum; server and network determine further speed.";
   }}
   TurboChunk Claim(int worker){lock(gate){

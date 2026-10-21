@@ -46,9 +46,9 @@ namespace AwrNext {
    startup=args;Theme.Style(this);Text="AWR Download Next 2.1 • Turbo";Width=1240;Height=800;MinimumSize=new Size(1100,700);StartPosition=FormStartPosition.CenterScreen;
    try{Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);}catch{Icon=SystemIcons.Application;}
    var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=11,Padding=new Padding(20)};
-   layout.RowStyles.Add(new RowStyle(SizeType.Absolute,82));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,48));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,50));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,46));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,112));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,36));Controls.Add(layout);
+   layout.RowStyles.Add(new RowStyle(SizeType.Absolute,105));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,48));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,50));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,46));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,112));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,36));Controls.Add(layout);
    var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2};head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,60));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,40));
-   var brand=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown};
+   var brand=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false};
    brand.Controls.Add(Theme.Label("AWR  /  NEXT TURBO",22,true));var tag=Theme.Label("اتصالات تكيفية • تنزيل مجزأ • استئناف محفوظ",10);tag.ForeColor=Theme.Muted;brand.Controls.Add(tag);head.Controls.Add(brand,0,0);
    stats=Theme.Label("جارٍ تشغيل محرك التنزيل…",12,true);stats.Dock=DockStyle.Fill;stats.TextAlign=ContentAlignment.MiddleRight;head.Controls.Add(stats,1,0);layout.Controls.Add(head,0,0);
    var bar=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft};
