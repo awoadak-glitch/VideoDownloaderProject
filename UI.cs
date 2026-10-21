@@ -84,7 +84,10 @@ namespace AwrNext {
     manager=new Manager(dir);foreach(var j in manager.State.Jobs.Where(x=>x.Status=="Complete"))seenComplete.Add(j.Id);
     manager.Changed+=RefreshJobs;
     await manager.Engine.Start(Program.EnginePath,dir);await manager.ApplySettings();ready=true;timer.Start();RefreshJobs();
-    if(startup.Contains("--smoke")){await Task.Delay(1800);string shot=Environment.GetEnvironmentVariable("AWR_TEST_SCREENSHOT");if(shot!=null){using(var bmp=new Bitmap(Width,Height)){DrawToBitmap(bmp,new Rectangle(0,0,Width,Height));bmp.Save(shot);}}Close();}
+    if(startup.Contains("--smoke")){await Task.Delay(1800);string shot=Environment.GetEnvironmentVariable("AWR_TEST_SCREENSHOT");if(shot!=null){using(var bmp=new Bitmap(Width,Height)){DrawToBitmap(bmp,new Rectangle(0,0,Width,Height));bmp.Save(shot);}
+      using(var settings=new SettingsDialog(manager.State.Settings)){settings.Show(this);await Task.Delay(200);using(var bitmap=new Bitmap(settings.Width,settings.Height)){settings.DrawToBitmap(bitmap,new Rectangle(0,0,settings.Width,settings.Height));bitmap.Save(Path.Combine(Path.GetDirectoryName(shot),"ui-settings.png"));}settings.Close();}
+      using(var add=new AddDialog(manager.State.Settings)){add.Show(this);await Task.Delay(200);using(var bitmap=new Bitmap(add.Width,add.Height)){add.DrawToBitmap(bitmap,new Rectangle(0,0,add.Width,add.Height));bitmap.Save(Path.Combine(Path.GetDirectoryName(shot),"ui-add.png"));}add.Close();}
+     }Close();}
    }catch(Exception e){banner.Text="تعذر التشغيل: "+e.Message;MessageBox.Show(this,e.Message,"تعذر تشغيل البرنامج");}
   }
   void Run(Func<Task> action){if(!ready||closing)return;RunCore(action);}

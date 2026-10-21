@@ -13,6 +13,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
   global VERSION,DROPPED,RANGES,BUSY
   path=self.path.split("?")[0]
+  if path=="/redirect":
+   self.send_response(302);self.send_header("Location","/cookie-data");self.send_header("Set-Cookie","downloadsid=test; Path=/");self.send_header("Content-Length","0");self.end_headers();return
+  if path=="/cookie-data" and "downloadsid=test" not in self.headers.get("Cookie",""):
+   self.send_response(403);self.send_header("Content-Length","0");self.end_headers();return
   if path=="/mutate":
    VERSION+=1;self.send_response(200);self.send_header("Content-Length","2");self.end_headers();self.wfile.write(b"OK");return
   if path=="/stats":

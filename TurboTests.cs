@@ -34,6 +34,7 @@ class TurboTests {
  static async Task MainAsync(){
   Directory.CreateDirectory(root);
   await ErrorCase("wrong","invalid range");await ErrorCase("flip","ETag changed");
+  var cookieManager=await New("redirect-cookie");try{var cookieJob=cookieManager.Enqueue(url+"/redirect",Path.Combine(root,"files"),"cookie.bin",16,sha);await Until(cookieManager,cookieJob,()=>cookieJob.Status=="Complete"||cookieJob.Status=="Error");Check(cookieJob.Status=="Complete"&&cookieJob.TransferUrl.EndsWith("/cookie-data")&&Util.Hash(cookieJob.Target)==sha,"redirect resolved once and session cookies preserved for ranges");}finally{cookieManager.Close().GetAwaiter().GetResult();}
   var m=await New("backoff");try{var j=m.Enqueue(url+"/busy",Path.Combine(root,"files"),"backoff.bin",16,sha);await Until(m,j,()=>j.Status=="Complete"||j.Status=="Error");Check(j.Status=="Complete"&&Util.Hash(j.Target)==sha&&j.RetryCount>=1,"HTTP 429 backoff recovers with exact SHA-256");}finally{m.Close().GetAwaiter().GetResult();}
   m=await New("corrupt-map","Fixed",1024);DownloadJob bad;
   try{bad=m.Enqueue(url+"/data",Path.Combine(root,"files"),"corrupt.bin",16,sha);await Until(m,bad,()=>bad.Done>512*1024);await m.Pause(bad);}finally{m.Close().GetAwaiter().GetResult();}

@@ -15,7 +15,8 @@ using System.Web.Script.Serialization;
 
 namespace AwrNext {
  public class DownloadJob {
-  public string Id=Guid.NewGuid().ToString("N"), Url="", Name="", Folder="", Referer="", Cookie="", UserAgent="Mozilla/5.0 AWRDownloadNext/2.0";
+  public string Id=Guid.NewGuid().ToString("N"), Url="", Name="", Folder="", Referer="", Cookie="", UserAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36";
+  public string TransferUrl="",TransferCookie="";
   public string Status="Queued", Message="", Gid="", ETag="", Modified="", ExpectedHash="", ActualHash="";
   public long Size=-1, Done=0, Speed=0;
   public int Connections=128, ActiveConnections=0, TargetConnections=0, PeakConnections=0, RetryCount=0;
@@ -34,7 +35,7 @@ namespace AwrNext {
  }
  public class State { public List<DownloadJob> Jobs=new List<DownloadJob>(); public Settings Settings=new Settings(); }
  public class RemoteInfo {
-  public long Size=-1; public bool Range=false; public string ETag="", Modified="", Name="", ContentType="";
+  public long Size=-1; public bool Range=false; public string ETag="", Modified="", Name="", ContentType="",Url="",Cookie="";
  }
  public static class Util {
   public static JavaScriptSerializer Json() { return new JavaScriptSerializer { MaxJsonLength=16*1024*1024, RecursionLimit=80 }; }
@@ -54,6 +55,9 @@ namespace AwrNext {
   }
   public static bool ValidUrl(string s) { Uri u; return Uri.TryCreate(s,UriKind.Absolute,out u) && (u.Scheme=="http"||u.Scheme=="https") && String.IsNullOrEmpty(u.UserInfo); }
   public static void Header(string s) { if(s!=null && (s.Contains("\r")||s.Contains("\n"))) throw new Exception("Header contains a line break."); }
+  public static CookieContainer Cookies(string url,string header){
+   var jar=new CookieContainer();if(!String.IsNullOrEmpty(header)){var uri=new Uri(url);foreach(var item in header.Split(';')){int at=item.IndexOf('=');if(at>0)jar.Add(uri,new Cookie(item.Substring(0,at).Trim(),item.Substring(at+1).Trim()));}}return jar;
+  }
   public static string Bytes(long n) { if(n<0)return "—"; string[] u={"B","KB","MB","GB","TB"}; double x=n; int i=0; while(x>=1024 && i<4){x/=1024;i++;} return x.ToString(i==0?"0":"0.0")+" "+u[i]; }
   public static string Hash(string path) { using(var s=File.OpenRead(path)) using(var h=SHA256.Create()) return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant(); }
   public static string Get(Dictionary<string,object> d,string k) { return d.ContainsKey(k)&&d[k]!=null?Convert.ToString(d[k],System.Globalization.CultureInfo.InvariantCulture):""; }
@@ -63,17 +67,18 @@ namespace AwrNext {
   public static async Task<RemoteInfo> Fetch(DownloadJob j) {
    if(!Util.ValidUrl(j.Url)) throw new Exception("Use a direct HTTP or HTTPS download link.");
    Util.Header(j.Cookie);Util.Header(j.Referer);Util.Header(j.UserAgent);
-   using(var h=new HttpClientHandler{AllowAutoRedirect=true,AutomaticDecompression=DecompressionMethods.None,UseCookies=false,UseProxy=j.SystemProxy})
+   var jar=Util.Cookies(j.Url,j.Cookie);
+   using(var h=new HttpClientHandler{AllowAutoRedirect=true,AutomaticDecompression=DecompressionMethods.None,UseCookies=true,CookieContainer=jar,UseProxy=j.SystemProxy})
    using(var c=new HttpClient(h){Timeout=TimeSpan.FromSeconds(25)})
    using(var q=new HttpRequestMessage(HttpMethod.Get,j.Url)) {
     q.Headers.Range=new System.Net.Http.Headers.RangeHeaderValue(0,0);
     q.Headers.TryAddWithoutValidation("User-Agent",j.UserAgent);
     q.Headers.TryAddWithoutValidation("Accept-Encoding","identity");
     if(j.Referer!="")q.Headers.TryAddWithoutValidation("Referer",j.Referer);
-    if(j.Cookie!="")q.Headers.TryAddWithoutValidation("Cookie",j.Cookie);
     using(var r=await c.SendAsync(q,HttpCompletionOption.ResponseHeadersRead)) {
      r.EnsureSuccessStatusCode();
      var p=new RemoteInfo();
+     p.Url=r.RequestMessage.RequestUri.AbsoluteUri;p.Cookie=jar.GetCookieHeader(r.RequestMessage.RequestUri);
      p.ETag=r.Headers.ETag==null?"":r.Headers.ETag.ToString();
      p.Modified=r.Content.Headers.LastModified.HasValue?r.Content.Headers.LastModified.Value.ToString("R"):"";
      p.ContentType=r.Content.Headers.ContentType==null?"":r.Content.Headers.ContentType.MediaType;
@@ -140,11 +145,11 @@ namespace AwrNext {
    var headers=new List<string>{"Accept-Encoding: identity"};
    if(j.ETag!=""&&!j.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase))headers.Add("If-Match: "+j.ETag);
    else if(j.Modified!="")headers.Add("If-Unmodified-Since: "+j.Modified);
-   if(j.Cookie!="")headers.Add("Cookie: "+j.Cookie);
+   if(j.TransferCookie!="")headers.Add("Cookie: "+j.TransferCookie);
    if(j.Referer!="")opts["referer"]=j.Referer;
    opts["header"]=headers.ToArray();
    // The expected checksum is verified by our finalizer, never by a silent redownload.
-   return Convert.ToString(await Call("addUri",new string[]{j.Url},opts));
+   return Convert.ToString(await Call("addUri",new string[]{j.TransferUrl==""?j.Url:j.TransferUrl},opts));
   }
   public async Task Shutdown() {try{await Call("shutdown");}catch{} if(process!=null)await Task.Run(()=>{try{if(!process.WaitForExit(5000))process.Kill();}catch{}});Dispose();}
   public void Dispose(){if(http!=null)http.Dispose();if(process!=null)process.Dispose();}
@@ -234,7 +239,7 @@ namespace AwrNext {
      if(!File.Exists(j.Part+".aria2")&&!File.Exists(j.Part+".awrmap"))throw new Exception("Resume map is missing. Use Restart; partial bytes were preserved.");
      if(!Probe.Same(j,p))throw new Exception("Remote file changed or identity cannot be verified. Use Restart, or supply a trusted SHA-256.");
     }
-    j.Size=p.Size;j.ETag=p.ETag;j.Modified=p.Modified;j.Range=p.Range;
+    j.Size=p.Size;j.ETag=p.ETag;j.Modified=p.Modified;j.Range=p.Range;j.TransferUrl=p.Url;j.TransferCookie=p.Cookie;
     if(!existing&&j.NameFromServer&&p.Name!="download.bin")j.Name=Util.UniqueName(j.Folder,p.Name,State.Jobs.Where(x=>x.Id!=j.Id));
     Directory.CreateDirectory(j.WorkDir);
     if(j.Size>0){var disk=new DriveInfo(Path.GetPathRoot(j.Folder));if(disk.IsReady && disk.AvailableFreeSpace<Math.Max(0,j.Size-j.Done)+4*1024*1024)throw new Exception("Not enough free disk space.");}

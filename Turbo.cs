@@ -178,13 +178,14 @@ namespace AwrNext {
    try{
     long from,end;lock(gate){from=chunk.Start+chunk.Done;end=chunk.Start+chunk.Length-1;}
     if(from>end)return;
-    request=(HttpWebRequest)WebRequest.Create(job.Url);
+    string direct=job.TransferUrl==""?job.Url:job.TransferUrl;
+    request=(HttpWebRequest)WebRequest.Create(direct);
     request.Method="GET";request.AllowAutoRedirect=true;request.MaximumAutomaticRedirections=10;request.AutomaticDecompression=DecompressionMethods.None;
     request.KeepAlive=true;request.UserAgent=job.UserAgent;request.Timeout=20000;request.ReadWriteTimeout=20000;
     if(!job.SystemProxy)request.Proxy=null;
     request.ServicePoint.ConnectionLimit=128;request.ServicePoint.Expect100Continue=false;
     request.AddRange(from,end);request.Headers[HttpRequestHeader.AcceptEncoding]="identity";
-    if(job.Cookie!="")request.Headers[HttpRequestHeader.Cookie]=job.Cookie;
+    request.CookieContainer=Util.Cookies(direct,job.TransferCookie);
     if(job.Referer!="")request.Referer=job.Referer;
     if(job.ETag!=""&&!job.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase))request.Headers[HttpRequestHeader.IfMatch]=job.ETag;
     else if(job.Modified!="")request.Headers[HttpRequestHeader.IfUnmodifiedSince]=job.Modified;
