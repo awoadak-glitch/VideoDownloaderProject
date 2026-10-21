@@ -47,15 +47,15 @@ Copy-Item README.md dist/README.md
 New-Item -ItemType Directory -Force dist/Source | Out-Null
 Invoke-WebRequest 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.xz' -OutFile dist/Source/aria2-1.37.0.tar.xz
 if ((Get-FileHash dist/Source/aria2-1.37.0.tar.xz -Algorithm SHA256).Hash -ne '60A420AD7085EB616CB6E2BDF0A7206D68FF3D37FB5A956DC44242EB2F79B66B') { throw 'Engine source checksum mismatch' }
-Compress-Archive Core.cs,Turbo.cs,UI.cs,Tests.cs,TurboTests.cs,fixture.py,build-windows.ps1,README.md,installer.nsi,make-icon.ps1 -DestinationPath dist/Source/AWR-Next-2.1.0-source.zip -Force
+Compress-Archive Core.cs,Turbo.cs,UI.cs,Tests.cs,TurboTests.cs,fixture.py,build-windows.ps1,README.md,installer.nsi,make-icon.ps1 -DestinationPath dist/Source/AWR-Next-2.2.0-source.zip -Force
 Copy-Item release/WINDOWS-TEST-REPORT.txt dist/WINDOWS-TEST-REPORT.txt
-Compress-Archive dist/* release/AWR-Download-Next-2.1.0-Portable-x64.zip -Force
+Compress-Archive dist/* release/AWR-Download-Next-2.2.0-Portable-x64.zip -Force
 $nsis = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
 if (-not (Test-Path $nsis)) { choco install nsis --yes --no-progress; if ($LASTEXITCODE -ne 0) { throw 'NSIS install failed' } }
 & $nsis /V2 installer.nsi
 if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
 $installPath=Join-Path $PSScriptRoot 'installer-smoke'
-$setup=Start-Process "$PSScriptRoot/release/AWR-Download-Next-2.1.0-Setup-x64.exe" -ArgumentList "/S /D=$installPath" -Wait -PassThru
+$setup=Start-Process "$PSScriptRoot/release/AWR-Download-Next-2.2.0-Setup-x64.exe" -ArgumentList "/S /D=$installPath" -Wait -PassThru
 if ($setup.ExitCode -ne 0 -or -not (Test-Path "$installPath/AWRDownloadNext.exe")) { Write-Host "Installer exit: $($setup.ExitCode), path: $installPath"; if(Test-Path $installPath){Get-ChildItem $installPath -Recurse}; throw 'Installer smoke failed' }
 $env:AWR_TEST_DATA="$root/installed-state"
 $env:AWR_TEST_SCREENSHOT="$root/ui-installed.png"

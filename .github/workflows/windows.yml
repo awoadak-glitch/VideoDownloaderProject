@@ -18,7 +18,7 @@ jobs:
         run: ./build-windows.ps1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: AWR-Download-Next-2.1.0-Windows-Verified
+          name: AWR-Download-Next-2.2.0-Windows-Verified
           path: release/*
           retention-days: 90
           if-no-files-found: error

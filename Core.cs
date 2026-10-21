@@ -16,11 +16,12 @@ using System.Web.Script.Serialization;
 namespace AwrNext {
  public class DownloadJob {
   public string Id=Guid.NewGuid().ToString("N"), Url="", Name="", Folder="", Referer="", Cookie="", UserAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36";
-  public string TransferUrl="",TransferCookie="";
+  public string TransferUrl="",TransferCookie="",TransferReferer="";
   public string Status="Queued", Message="", Gid="", ETag="", Modified="", ExpectedHash="", ActualHash="";
   public long Size=-1, Done=0, Speed=0;
   public int Connections=128, ActiveConnections=0, TargetConnections=0, PeakConnections=0, RetryCount=0;
-  public string EngineMode="Adaptive",Backend="",EngineNote=""; public int LineMbps=180;public bool SystemProxy=true;
+  public string EngineMode="Adaptive",Backend="",EngineNote=""; public int LineMbps=0;public bool SystemProxy=true,ForceSingle=false;
+  public int PartCount,CompletedParts,Redistributions,ServerCeiling;
   public bool Range=false, ReadyToFinalize=false, NameFromServer=false;
   public DateTime Added=DateTime.UtcNow;
   public string WorkDir { get { return Path.Combine(Folder,".awr-parts",Id); } }
@@ -29,13 +30,13 @@ namespace AwrNext {
  }
  public class Settings {
   public string Folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"Downloads");
-  public int Connections=128, Concurrent=1, LimitKiB=0, LineMbps=180;
+  public int Connections=128, Concurrent=1, LimitKiB=0, LineMbps=0,PerformanceRevision=0;
   public string EngineMode="Adaptive"; public bool SystemProxy=true;
   public DateTime StartAt=DateTime.MinValue;
  }
  public class State { public List<DownloadJob> Jobs=new List<DownloadJob>(); public Settings Settings=new Settings(); }
  public class RemoteInfo {
-  public long Size=-1; public bool Range=false; public string ETag="", Modified="", Name="", ContentType="",Url="",Cookie="";
+  public long Size=-1; public bool Range=false; public string ETag="", Modified="", Name="", ContentType="",Url="",Cookie="",Referer="";
  }
  public static class Util {
   public static JavaScriptSerializer Json() { return new JavaScriptSerializer { MaxJsonLength=16*1024*1024, RecursionLimit=80 }; }
@@ -64,37 +65,62 @@ namespace AwrNext {
   public static long Num(Dictionary<string,object> d,string k) { long n; return long.TryParse(Get(d,k),out n)?n:0; }
  }
  public static class Probe {
+  public static bool IsMediaFire(Uri u) { return u.Host.Equals("mediafire.com",StringComparison.OrdinalIgnoreCase)||u.Host.EndsWith(".mediafire.com",StringComparison.OrdinalIgnoreCase); }
+  public static string MediaFireLink(string html,Uri page) {
+   if(!IsMediaFire(page))return "";
+   foreach(Match tag in Regex.Matches(html,@"<a\b[^>]*>",RegexOptions.IgnoreCase)){
+    if(!Regex.IsMatch(tag.Value,@"\bid\s*=\s*['""]downloadButton['""]",RegexOptions.IgnoreCase))continue;
+    var href=Regex.Match(tag.Value,@"\bhref\s*=\s*(['""])(.*?)\1",RegexOptions.IgnoreCase);
+    Uri direct;if(href.Success&&Uri.TryCreate(page,WebUtility.HtmlDecode(href.Groups[2].Value),out direct)&&direct.Scheme=="https"&&IsMediaFire(direct)&&String.IsNullOrEmpty(direct.UserInfo))return direct.AbsoluteUri;
+   }
+   return "";
+  }
+  static async Task<string> ReadPage(HttpContent content) {
+   using(var input=await content.ReadAsStreamAsync())using(var memory=new MemoryStream())using(var timeout=new CancellationTokenSource(25000)){
+    byte[] buffer=new byte[32768];int n;
+    while(memory.Length<512*1024&&(n=await input.ReadAsync(buffer,0,(int)Math.Min(buffer.Length,512*1024-memory.Length),timeout.Token))>0)memory.Write(buffer,0,n);
+    return Encoding.UTF8.GetString(memory.ToArray());
+   }
+  }
   public static async Task<RemoteInfo> Fetch(DownloadJob j) {
    if(!Util.ValidUrl(j.Url)) throw new Exception("Use a direct HTTP or HTTPS download link.");
    Util.Header(j.Cookie);Util.Header(j.Referer);Util.Header(j.UserAgent);
-   var jar=Util.Cookies(j.Url,j.Cookie);
+   var jar=Util.Cookies(j.Url,j.Cookie);string next=j.Url,referer=j.Referer;bool useRange=!j.ForceSingle,resolved=false;
    using(var h=new HttpClientHandler{AllowAutoRedirect=true,AutomaticDecompression=DecompressionMethods.None,UseCookies=true,CookieContainer=jar,UseProxy=j.SystemProxy})
-   using(var c=new HttpClient(h){Timeout=TimeSpan.FromSeconds(25)})
-   using(var q=new HttpRequestMessage(HttpMethod.Get,j.Url)) {
-    q.Headers.Range=new System.Net.Http.Headers.RangeHeaderValue(0,0);
-    q.Headers.TryAddWithoutValidation("User-Agent",j.UserAgent);
-    q.Headers.TryAddWithoutValidation("Accept-Encoding","identity");
-    if(j.Referer!="")q.Headers.TryAddWithoutValidation("Referer",j.Referer);
-    using(var r=await c.SendAsync(q,HttpCompletionOption.ResponseHeadersRead)) {
-     r.EnsureSuccessStatusCode();
-     var p=new RemoteInfo();
-     p.Url=r.RequestMessage.RequestUri.AbsoluteUri;p.Cookie=jar.GetCookieHeader(r.RequestMessage.RequestUri);
-     p.ETag=r.Headers.ETag==null?"":r.Headers.ETag.ToString();
-     p.Modified=r.Content.Headers.LastModified.HasValue?r.Content.Headers.LastModified.Value.ToString("R"):"";
-     p.ContentType=r.Content.Headers.ContentType==null?"":r.Content.Headers.ContentType.MediaType;
-     if(p.ContentType=="text/html"||p.ContentType=="application/xhtml+xml") throw new Exception("This is a web page, login page, or expired link. Copy the direct file URL.");
-     var cr=r.Content.Headers.ContentRange;
-     p.Range=r.StatusCode==HttpStatusCode.PartialContent && cr!=null && cr.From==0 && cr.To==0 && cr.Length.HasValue;
-     p.Size=p.Range?cr.Length.Value:(r.StatusCode==HttpStatusCode.OK?(r.Content.Headers.ContentLength??-1):-1);
-     if(r.StatusCode==HttpStatusCode.PartialContent&&!p.Range) throw new Exception("Invalid Content-Range returned by server.");
-     if(r.Content.Headers.ContentEncoding.Any(e=>!String.Equals(e,"identity",StringComparison.OrdinalIgnoreCase))) throw new Exception("Server sent compressed transfer bytes; safe segmented download is unavailable.");
-     var cd=r.Content.Headers.ContentDisposition;
-     if(cd!=null)p.Name=(cd.FileNameStar??cd.FileName??"").Trim('"');
-     if(p.Name=="")p.Name=Uri.UnescapeDataString(Path.GetFileName(r.RequestMessage.RequestUri.AbsolutePath));
-     p.Name=Util.SafeName(p.Name);
-     return p;
+   using(var c=new HttpClient(h){Timeout=TimeSpan.FromSeconds(25)}){
+    for(int attempt=0;attempt<4;attempt++){
+     using(var q=new HttpRequestMessage(HttpMethod.Get,next)) {
+      if(useRange)q.Headers.Range=new System.Net.Http.Headers.RangeHeaderValue(0,0);
+      q.Headers.TryAddWithoutValidation("User-Agent",j.UserAgent);q.Headers.TryAddWithoutValidation("Accept-Encoding","identity");
+      if(referer!="")q.Headers.TryAddWithoutValidation("Referer",referer);
+      using(var r=await c.SendAsync(q,HttpCompletionOption.ResponseHeadersRead)) {
+       int code=(int)r.StatusCode;
+       if(useRange&&(code==400||code==403||code==405||code==416||code==501)){useRange=false;continue;}
+       if(!r.IsSuccessStatusCode)throw new Exception("HTTP "+code+": the server refused this link. Refresh the direct link or provide its required Cookie/Referer.");
+       var p=new RemoteInfo();p.Url=r.RequestMessage.RequestUri.AbsoluteUri;p.Cookie=jar.GetCookieHeader(r.RequestMessage.RequestUri);
+       p.ETag=r.Headers.ETag==null?"":r.Headers.ETag.ToString();p.Modified=r.Content.Headers.LastModified.HasValue?r.Content.Headers.LastModified.Value.ToString("R"):"";
+       p.ContentType=r.Content.Headers.ContentType==null?"":r.Content.Headers.ContentType.MediaType;
+       if(p.ContentType=="text/html"||p.ContentType=="application/xhtml+xml"){
+        if(!resolved&&IsMediaFire(r.RequestMessage.RequestUri)){
+         if(r.StatusCode==HttpStatusCode.PartialContent){useRange=false;continue;}
+         string direct=MediaFireLink(await ReadPage(r.Content),r.RequestMessage.RequestUri);
+         if(direct!=""){referer=p.Url;next=direct;resolved=true;useRange=!j.ForceSingle;continue;}
+        }
+        throw new Exception("This is a web page or an expired/protected link. Copy a fresh direct file URL.");
+       }
+       var cr=r.Content.Headers.ContentRange;
+       p.Range=useRange&&r.StatusCode==HttpStatusCode.PartialContent&&cr!=null&&cr.From==0&&cr.To==0&&cr.Length.HasValue;
+       p.Size=p.Range?cr.Length.Value:(r.StatusCode==HttpStatusCode.OK?(r.Content.Headers.ContentLength??-1):-1);
+       if(r.StatusCode==HttpStatusCode.PartialContent&&!p.Range)throw new Exception("Invalid Content-Range returned by server.");
+       if(r.Content.Headers.ContentEncoding.Any(e=>!String.Equals(e,"identity",StringComparison.OrdinalIgnoreCase)))throw new Exception("Server sent compressed transfer bytes; safe segmented download is unavailable.");
+       var cd=r.Content.Headers.ContentDisposition;if(cd!=null)p.Name=(cd.FileNameStar??cd.FileName??"").Trim('"');
+       if(p.Name=="")p.Name=Uri.UnescapeDataString(Path.GetFileName(r.RequestMessage.RequestUri.AbsolutePath));p.Name=Util.SafeName(p.Name);p.Referer=referer;
+       return p;
+      }
+     }
     }
    }
+   throw new Exception("The file link could not be resolved. Copy a fresh direct download URL.");
   }
   public static bool Same(DownloadJob j,RemoteInfo p) {
    if(j.Size<0||p.Size<0||j.Size!=p.Size)return false;
@@ -134,7 +160,7 @@ namespace AwrNext {
    }
   }
   public async Task<string> Add(DownloadJob j,int limit) {
-   if(j.Range&&j.Size>0&&(File.Exists(j.Part+".awrmap")||(j.EngineMode!="Compatibility"&&!File.Exists(j.Part+".aria2")))){j.Backend="Turbo";return turbo.Add(j);}
+   if(!j.ForceSingle&&j.Range&&j.Size>0&&(File.Exists(j.Part+".awrmap")||(j.EngineMode!="Compatibility"&&!File.Exists(j.Part+".aria2")))){j.Backend="Turbo";return turbo.Add(j);}
    j.Backend="aria2";
    var opts=new Dictionary<string,object>{
     {"dir",j.WorkDir},{"out","payload.part"},{"continue","true"},{"allow-overwrite","false"},{"auto-file-renaming","false"},
@@ -143,10 +169,10 @@ namespace AwrNext {
     {"max-resume-failure-tries","0"},{"user-agent",j.UserAgent},{"max-download-limit","0"},{"http-accept-gzip","false"}
    };
    var headers=new List<string>{"Accept-Encoding: identity"};
-   if(j.ETag!=""&&!j.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase))headers.Add("If-Match: "+j.ETag);
-   else if(j.Modified!="")headers.Add("If-Unmodified-Since: "+j.Modified);
+   if(!j.ForceSingle&&j.ETag!=""&&!j.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase))headers.Add("If-Match: "+j.ETag);
+   else if(!j.ForceSingle&&j.Modified!="")headers.Add("If-Unmodified-Since: "+j.Modified);
    if(j.TransferCookie!="")headers.Add("Cookie: "+j.TransferCookie);
-   if(j.Referer!="")opts["referer"]=j.Referer;
+   if(j.TransferReferer!="")opts["referer"]=j.TransferReferer;else if(j.Referer!="")opts["referer"]=j.Referer;
    opts["header"]=headers.ToArray();
    // The expected checksum is verified by our finalizer, never by a silent redownload.
    return Convert.ToString(await Call("addUri",new string[]{j.TransferUrl==""?j.Url:j.TransferUrl},opts));
@@ -166,6 +192,7 @@ namespace AwrNext {
     try {State=Read(f);}
     catch {try{State=Read(f+".bak");}catch{throw new Exception("Download history cannot be read. It was preserved; restore downloads.json.bak before continuing.");}}
    }
+   if(State.Settings.PerformanceRevision<22){State.Settings.LineMbps=0;State.Settings.LimitKiB=0;State.Settings.PerformanceRevision=22;}
    foreach(var j in State.Jobs){
     j.Gid="";j.Speed=0;j.ActiveConnections=0;
     if(j.Status!="Complete"&&j.Status!="Error")j.Status="Paused";
@@ -204,12 +231,25 @@ namespace AwrNext {
       if(j.Status!="Downloading")continue;
       j.Done=Util.Num(d,"completedLength");j.Speed=Util.Num(d,"downloadSpeed");j.ActiveConnections=(int)Util.Num(d,"connections");
       j.EngineNote=Util.Get(d,"engineNote");j.TargetConnections=(int)Util.Num(d,"targetConnections");j.PeakConnections=Math.Max(j.PeakConnections,(int)Util.Num(d,"peakConnections"));j.RetryCount=(int)Util.Num(d,"retryCount");
+      j.PartCount=(int)Util.Num(d,"partCount");j.CompletedParts=(int)Util.Num(d,"completedParts");j.Redistributions=(int)Util.Num(d,"redistributions");j.ServerCeiling=(int)Util.Num(d,"serverCeiling");
       var total=Util.Num(d,"totalLength");if(j.Size<0&&total>0)j.Size=total;
       var status=Util.Get(d,"status");
       if(status=="complete"){
        j.ReadyToFinalize=true;j.Status="Verifying";j.Speed=0;Save();
        await FinalizeJob(j);
       } else if(status=="error"||status=="removed"){
+       if(Util.Get(d,"errorCode")=="RETRY_SINGLE"&&j.Done==0&&!j.ForceSingle){
+        int version=Version(j);await Engine.Call("removeDownloadResult",j.Gid);j.Gid="";
+        // This fallback is only allowed before any file bytes have been accepted.
+        if(File.Exists(j.Part+".awrmap")){
+         var map=Util.Json().Deserialize<TurboMap>(File.ReadAllText(j.Part+".awrmap"));
+         if(map==null||map.Chunks.Any(part=>part.Done!=0))throw new Exception("Fallback cancelled: partial bytes must be preserved.");
+         File.Delete(j.Part+".awrmap");
+        }
+        if(File.Exists(j.Part))File.Delete(j.Part);
+        j.ForceSingle=true;j.Range=false;j.Message="Server declined ranges; switching automatically to one connection.";
+        if(version==Version(j)&&!closing&&j.Status=="Downloading")j.Status="Queued";Save();continue;
+       }
        j.Status="Error";j.Speed=0;j.Message="Engine "+Util.Get(d,"errorCode")+": "+Util.Get(d,"errorMessage");
        try{await Engine.Call("removeDownloadResult",j.Gid);}catch{}j.Gid="";Save();
       }
@@ -239,7 +279,7 @@ namespace AwrNext {
      if(!File.Exists(j.Part+".aria2")&&!File.Exists(j.Part+".awrmap"))throw new Exception("Resume map is missing. Use Restart; partial bytes were preserved.");
      if(!Probe.Same(j,p))throw new Exception("Remote file changed or identity cannot be verified. Use Restart, or supply a trusted SHA-256.");
     }
-    j.Size=p.Size;j.ETag=p.ETag;j.Modified=p.Modified;j.Range=p.Range;j.TransferUrl=p.Url;j.TransferCookie=p.Cookie;
+    j.Size=p.Size;j.ETag=p.ETag;j.Modified=p.Modified;j.Range=p.Range;j.TransferUrl=p.Url;j.TransferCookie=p.Cookie;j.TransferReferer=p.Referer;
     if(!existing&&j.NameFromServer&&p.Name!="download.bin")j.Name=Util.UniqueName(j.Folder,p.Name,State.Jobs.Where(x=>x.Id!=j.Id));
     Directory.CreateDirectory(j.WorkDir);
     if(j.Size>0){var disk=new DriveInfo(Path.GetPathRoot(j.Folder));if(disk.IsReady && disk.AvailableFreeSpace<Math.Max(0,j.Size-j.Done)+4*1024*1024)throw new Exception("Not enough free disk space.");}
@@ -287,7 +327,7 @@ namespace AwrNext {
    await Pause(j);
    if(j.Gid!=""){try{await Engine.Call("forceRemove",j.Gid);}catch{}try{await Engine.Call("removeDownloadResult",j.Gid);}catch{}j.Gid="";}
    if(File.Exists(j.Part))File.Delete(j.Part);if(File.Exists(j.Part+".aria2"))File.Delete(j.Part+".aria2");if(File.Exists(j.Part+".awrmap"))File.Delete(j.Part+".awrmap");
-   j.Done=0;j.Size=-1;j.ETag="";j.Modified="";j.ActualHash="";j.ReadyToFinalize=false;Resume(j);
+   j.Done=0;j.Size=-1;j.ETag="";j.Modified="";j.ActualHash="";j.ReadyToFinalize=false;j.ForceSingle=false;Resume(j);
   }
   public async Task UpdateUrl(DownloadJob j,string url){
    if(!Util.ValidUrl(url))throw new Exception("Invalid URL.");

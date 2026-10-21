@@ -12,8 +12,8 @@ using Microsoft.Win32;
 
 [assembly:AssemblyTitle("AWR Download Next")]
 [assembly:AssemblyProduct("AWR Download Next")]
-[assembly:AssemblyVersion("2.1.0.0")]
-[assembly:AssemblyFileVersion("2.1.0.0")]
+[assembly:AssemblyVersion("2.2.0.0")]
+[assembly:AssemblyFileVersion("2.2.0.0")]
 namespace AwrNext {
  static class Program {
   public static string EnginePath { get { return Environment.GetEnvironmentVariable("AWR_TEST_ENGINE")??Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Engine","aria2c.exe"); } }
@@ -43,7 +43,7 @@ namespace AwrNext {
   System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=500}; bool ready=false,closing=false,finishedClosing=false,refreshing=false; string[] startup;
   HashSet<string> seenComplete=new HashSet<string>();
   public MainForm(string[] args){
-   startup=args;Theme.Style(this);Text="AWR Download Next 2.1 • Turbo";Width=1240;Height=800;MinimumSize=new Size(1100,700);StartPosition=FormStartPosition.CenterScreen;
+   startup=args;Theme.Style(this);Text="AWR Download Next 2.2 • Turbo";Width=1240;Height=800;MinimumSize=new Size(1100,700);StartPosition=FormStartPosition.CenterScreen;
    try{Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);}catch{Icon=SystemIcons.Application;}
    var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=11,Padding=new Padding(20)};
    layout.RowStyles.Add(new RowStyle(SizeType.Absolute,105));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,48));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,50));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,46));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,112));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,36));Controls.Add(layout);
@@ -69,7 +69,7 @@ namespace AwrNext {
    grid=new DataGridView{Dock=DockStyle.Fill,BackgroundColor=Theme.Panel,BorderStyle=BorderStyle.None,AllowUserToAddRows=false,AllowUserToDeleteRows=false,ReadOnly=true,MultiSelect=false,SelectionMode=DataGridViewSelectionMode.FullRowSelect,RowHeadersVisible=false,EnableHeadersVisualStyles=false,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill,GridColor=Theme.Line,CellBorderStyle=DataGridViewCellBorderStyle.SingleHorizontal,ColumnHeadersHeight=40,RowTemplate={Height=46}};
    grid.ColumnHeadersDefaultCellStyle=new DataGridViewCellStyle{BackColor=Theme.Bg,ForeColor=Theme.Muted,Font=new Font("Segoe UI",10)};
    grid.DefaultCellStyle=new DataGridViewCellStyle{BackColor=Theme.Panel,ForeColor=Theme.Text,SelectionBackColor=Color.FromArgb(36,68,72),SelectionForeColor=Color.White,Padding=new Padding(6)};
-   string[] titles={"اسم الملف","الحجم","التقدم","السرعة","المتبقي","الاتصالات","الحالة"};foreach(var title in titles)grid.Columns.Add(title,title);
+   string[] titles={"اسم الملف","الحجم","التقدم","السرعة","المتبقي","الاتصالات","الحالة","الأجزاء"};foreach(var title in titles)grid.Columns.Add(title,title);
    grid.Columns[0].FillWeight=270;grid.Columns[6].FillWeight=150;grid.SelectionChanged+=(s,e)=>ShowDetail();grid.CellDoubleClick+=(s,e)=>OpenFolder();grid.CellPainting+=PaintProgress;layout.Controls.Add(grid,0,4);
    detail=new Label{Dock=DockStyle.Fill,BackColor=Theme.Panel,Padding=new Padding(12),ForeColor=Theme.Muted,AutoEllipsis=true,Font=new Font("Segoe UI",9)};layout.Controls.Add(detail,0,5);
    banner=new Label{Dock=DockStyle.Fill,ForeColor=Theme.Muted,TextAlign=ContentAlignment.MiddleRight,Text="السرعة مرتبطة بالخط والخادم. الاستئناف يتطلب دعم الخادم وثبات الملف."};layout.Controls.Add(banner,0,6);
@@ -120,7 +120,7 @@ namespace AwrNext {
   void Diagnostics(){
    var j=Selected();if(j==null){MessageBox.Show(this,"اختر تحميلًا أولًا.");return;}
    using(var d=new SaveFileDialog{Filter="Text report|*.txt",FileName="AWR-speed-report.txt"})if(d.ShowDialog(this)==DialogResult.OK){
-    var report="AWR Download Next 2.1\r\nTime UTC: "+DateTime.UtcNow.ToString("o")+"\r\nHost: "+new Uri(j.Url).Host+"\r\nStatus: "+j.Status+"\r\nEngine / mode: "+j.Backend+" / "+j.EngineMode+"\r\nRange support: "+j.Range+"\r\nActive / adaptive target / ceiling: "+j.ActiveConnections+" / "+j.TargetConnections+" / "+j.Connections+"\r\nPeak active connections: "+j.PeakConnections+"\r\nRetries: "+j.RetryCount+"\r\nCurrent speed bytes/s: "+j.Speed+"\r\nCurrent speed Mbps: "+(j.Speed*8/1000000.0).ToString("0.00")+"\r\nConfigured line Mbps (not a speed test): "+j.LineMbps+"\r\nApplication limit KiB/s: "+manager.State.Settings.LimitKiB+"\r\nSystem proxy: "+j.SystemProxy+"\r\nCompleted / total bytes: "+j.Done+" / "+j.Size+"\r\nExpected SHA256 supplied: "+(j.ExpectedHash!="")+"\r\nEngine note: "+j.EngineNote+"\r\n";
+    var report="AWR Download Next 2.2\r\nTime UTC: "+DateTime.UtcNow.ToString("o")+"\r\nHost: "+new Uri(j.Url).Host+"\r\nStatus: "+j.Status+"\r\nEngine / mode: "+j.Backend+" / "+j.EngineMode+"\r\nRange support: "+j.Range+"\r\nActive / adaptive target / ceiling: "+j.ActiveConnections+" / "+j.TargetConnections+" / "+j.Connections+"\r\nPeak active connections: "+j.PeakConnections+"\r\nLearned server ceiling: "+j.ServerCeiling+"\r\nParts complete / total: "+j.CompletedParts+" / "+j.PartCount+"\r\nLive tail splits: "+j.Redistributions+"\r\nRetries: "+j.RetryCount+"\r\nCurrent speed bytes/s: "+j.Speed+"\r\nCurrent speed Mbps: "+(j.Speed*8/1000000.0).ToString("0.00")+"\r\nConfigured line Mbps (not a speed test): "+j.LineMbps+"\r\nApplication limit KiB/s: "+manager.State.Settings.LimitKiB+"\r\nSystem proxy: "+j.SystemProxy+"\r\nCompleted / total bytes: "+j.Done+" / "+j.Size+"\r\nExpected SHA256 supplied: "+(j.ExpectedHash!="")+"\r\nEngine note: "+j.EngineNote+"\r\n";
     File.WriteAllText(d.FileName,report,new System.Text.UTF8Encoding(true));MessageBox.Show(this,"تم حفظ التقرير دون الرابط الكامل أو كلمات المرور.");
    }
   }
@@ -143,7 +143,7 @@ namespace AwrNext {
     for(int i=0;i<list.Length;i++){
      var j=list[i];string eta=j.Speed>0&&j.Size>0?TimeSpan.FromSeconds(Math.Max(0,(j.Size-j.Done)/j.Speed)).ToString(@"hh\:mm\:ss"):"—";
      var row=grid.Rows[i];row.Cells[0].Value=j.Name;row.Cells[1].Value=Util.Bytes(j.Size);row.Cells[2].Value=j.Size>0?Math.Min(100,100.0*j.Done/j.Size).ToString("0.0")+"%":(j.Status=="Complete"?"100%":"—");
-     row.Cells[3].Value=j.Speed>0?Util.Bytes(j.Speed)+"/s":"—";row.Cells[4].Value=eta;row.Cells[5].Value=j.ActiveConnections+" / "+(j.Backend=="aria2"?Math.Min(16,j.Connections):j.Connections);row.Cells[6].Value=Status(j.Status);
+     row.Cells[3].Value=j.Speed>0?Util.Bytes(j.Speed)+"/s":"—";row.Cells[4].Value=eta;row.Cells[5].Value=j.ActiveConnections+" / "+(j.Backend=="aria2"?(j.Range?Math.Min(16,j.Connections):1):(j.ServerCeiling>0?j.ServerCeiling:j.Connections));row.Cells[6].Value=Status(j.Status);row.Cells[7].Value=j.PartCount>0?j.CompletedParts+" / "+j.PartCount:"—";
      row.Cells[6].Style.ForeColor=j.Status=="Complete"?Theme.Accent:(j.Status=="Error"?Color.Salmon:Theme.Text);
     }
     long speed=manager.State.Jobs.Sum(j=>j.Speed);int active=manager.State.Jobs.Count(j=>j.Status=="Downloading");
@@ -154,7 +154,7 @@ namespace AwrNext {
    }finally{refreshing=false;}
   }
   void ShowDetail(){
-   if(detail==null)return;var j=Selected();detail.Text=j==null?"Turbo يزيد الاتصالات تدريجيًا بحسب الأداء حتى السقف المحدد. أضف رابطًا مباشرًا للبدء.":j.Name+"  •  "+j.Backend+" / "+j.EngineMode+"\n"+Util.Bytes(j.Done)+" / "+Util.Bytes(j.Size)+"    •    "+(j.Range?"يدعم التنزيل المجزأ والاستئناف":"دعم الاستئناف غير متاح / لم يفحص بعد")+"  •  إعادة المحاولة: "+j.RetryCount+"\n"+(j.Message!=""?j.Message:j.EngineNote)+"\n"+(j.ActualHash!=""?"SHA-256: "+j.ActualHash:j.Target);
+   if(detail==null)return;var j=Selected();detail.Text=j==null?"بلا حد سرعة افتراضي. Turbo يوزع الأجزاء ويزيد الاتصالات سريعًا حسب استجابة الخادم.":j.Name+"  •  "+j.Backend+" / "+j.EngineMode+"\n"+Util.Bytes(j.Done)+" / "+Util.Bytes(j.Size)+"    •    "+(j.Range?"يدعم التنزيل المجزأ والاستئناف":"دعم الاستئناف غير متاح / لم يفحص بعد")+"  •  الأجزاء: "+j.CompletedParts+"/"+j.PartCount+"  •  إعادة توزيع: "+j.Redistributions+"  •  محاولات: "+j.RetryCount+"\n"+(j.Message!=""?j.Message:j.EngineNote)+"\n"+(j.ActualHash!=""?"SHA-256: "+j.ActualHash:j.Target);
   }
   void PaintProgress(object sender,DataGridViewCellPaintingEventArgs e){
    if(e.RowIndex<0||e.ColumnIndex!=2)return;var j=grid.Rows[e.RowIndex].Tag as DownloadJob;if(j==null)return;
@@ -182,7 +182,7 @@ namespace AwrNext {
    Theme.Field(t,"رابط الملف المباشر",url,0);Theme.Field(t,"اسم الملف (اختياري)",name,1);
    var dest=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2};dest.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));dest.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,55));dest.Controls.Add(folder,0,0);var browse=Theme.Button("…",()=>{using(var d=new FolderBrowserDialog{SelectedPath=folder.Text})if(d.ShowDialog()==DialogResult.OK)folder.Text=d.SelectedPath;});browse.Width=42;dest.Controls.Add(browse,1,0);Theme.Field(t,"مجلد الحفظ",dest,2);
    Theme.Field(t,"سقف الاتصالات",connections,3);Theme.Field(t,"SHA-256 (اختياري)",hash,4);Theme.Field(t,"Referer (اختياري)",referrer,5);Theme.Field(t,"Cookie (اختياري)",cookie,6);
-   var hint=new Label{Dock=DockStyle.Fill,ForeColor=Theme.Muted,Text="الوضع: "+settings.EngineMode+". Turbo يبدأ بعدد قليل ويزيد عندما تتحسن السرعة.\n128 سقف للاتصالات، وليس عددًا يفتح دائمًا. وضع التوافق أقصاه 16.\nالبصمة المرجعية تؤكد المطابقة للأصل. استخدم رابط الملف المباشر.",Padding=new Padding(6)};t.Controls.Add(hint,0,7);t.SetColumnSpan(hint,2);t.SetRowSpan(hint,2);
+   var hint=new Label{Dock=DockStyle.Fill,ForeColor=Theme.Muted,Text="الوضع: "+settings.EngineMode+". Turbo يبدأ بـ8 اتصالات ويزيد سريعًا عندما تتحسن السرعة.\n128 سقف للاتصالات، وليس عددًا يفتح دائمًا. وضع التوافق أقصاه 16.\nالبصمة المرجعية تؤكد المطابقة للأصل. يدعم الرابط المباشر وزر MediaFire العام.",Padding=new Padding(6)};t.Controls.Add(hint,0,7);t.SetColumnSpan(hint,2);t.SetRowSpan(hint,2);
    var buttons=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft};buttons.Controls.Add(Theme.Button("بدء التنزيل",()=>{if(!Util.ValidUrl(Url)){MessageBox.Show("أدخل رابط HTTP أو HTTPS مباشرًا.");return;}if(Folder==""){MessageBox.Show("اختر مجلد الحفظ.");return;}DialogResult=DialogResult.OK;},true));buttons.Controls.Add(Theme.Button("إلغاء",()=>DialogResult=DialogResult.Cancel));t.Controls.Add(buttons,0,9);t.SetColumnSpan(buttons,2);
   }
  }
@@ -190,14 +190,14 @@ namespace AwrNext {
   public Settings Result;public SettingsDialog(Settings old){
    Theme.Style(this);Text="إعدادات Turbo • تطبق على التحميلات الجديدة";Width=850;Height=660;MaximizeBox=false;MinimizeBox=false;
    var t=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=11,Padding=new Padding(20)};t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,60));t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,40));for(int i=0;i<11;i++)t.RowStyles.Add(new RowStyle(SizeType.Absolute,51));Controls.Add(t);
-   var folder=Theme.Input(old.Folder);var con=Theme.Number(old.Connections,1,128);var simultaneous=Theme.Number(old.Concurrent,1,8);var limit=Theme.Number(old.LimitKiB,0,2000000);var line=Theme.Number(old.LineMbps,0,100000);
+   var folder=Theme.Input(old.Folder);var con=Theme.Number(old.Connections,1,128);var simultaneous=Theme.Number(old.Concurrent,1,8);var limit=Theme.Number(old.LimitKiB,0,2000000);var line=Theme.Label("بلا حد افتراضي • لا يرتبط بسرعة اشتراك محددة");
    var mode=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Dock=DockStyle.Fill,Margin=new Padding(7)};mode.Items.AddRange(new object[]{"Turbo • تكيفي (موصى به)","Turbo • سقف ثابت","aria2 • توافق"});mode.SelectedIndex=old.EngineMode=="Fixed"?1:old.EngineMode=="Compatibility"?2:0;
    var proxy=new CheckBox{Text="استخدام إعدادات بروكسي Windows",Checked=old.SystemProxy,AutoSize=true,ForeColor=Theme.Text};
    var schedule=new CheckBox{Text="تفعيل وقت بدء الطابور",Checked=old.StartAt>DateTime.Now,AutoSize=true,ForeColor=Theme.Text};var at=new DateTimePicker{Format=DateTimePickerFormat.Custom,CustomFormat="yyyy-MM-dd HH:mm",Value=old.StartAt>DateTime.Now?old.StartAt:DateTime.Now.AddHours(1),Width=230};
    Theme.Field(t,"مجلد الحفظ الافتراضي",folder,0);Theme.Field(t,"اتصالات لكل ملف جديد",con,1);Theme.Field(t,"الملفات المتزامنة",simultaneous,2);Theme.Field(t,"حد السرعة KB/s (0 = مفتوح)",limit,3);t.Controls.Add(schedule,0,4);Theme.Field(t,"بدء الملفات المنتظرة",at,5);
-   Theme.Field(t,"المحرك",mode,6);Theme.Field(t,"سرعة خطك Mbps (للمقارنة)",line,7);t.Controls.Add(proxy,0,8);t.SetColumnSpan(proxy,2);
-   var fast=Theme.Button("إعداد خط 180 Mbps",()=>{mode.SelectedIndex=0;con.Value=128;simultaneous.Value=1;limit.Value=0;line.Value=180;},true);fast.Width=230;t.Controls.Add(fast,0,9);
-   var b=Theme.Button("حفظ الإعدادات",()=>{try{Directory.CreateDirectory(folder.Text);Result=new Settings{Folder=Path.GetFullPath(folder.Text),Connections=(int)con.Value,Concurrent=(int)simultaneous.Value,LimitKiB=(int)limit.Value,StartAt=schedule.Checked?at.Value:DateTime.MinValue,LineMbps=(int)line.Value,EngineMode=mode.SelectedIndex==1?"Fixed":mode.SelectedIndex==2?"Compatibility":"Adaptive",SystemProxy=proxy.Checked};DialogResult=DialogResult.OK;}catch(Exception e){MessageBox.Show(e.Message);}},true);t.Controls.Add(b,0,10);
+   Theme.Field(t,"المحرك",mode,6);Theme.Field(t,"السرعة",line,7);t.Controls.Add(proxy,0,8);t.SetColumnSpan(proxy,2);
+   var fast=Theme.Button("أقصى أداء • بلا حد",()=>{mode.SelectedIndex=0;con.Value=128;simultaneous.Value=1;limit.Value=0;},true);fast.Width=230;t.Controls.Add(fast,0,9);
+   var b=Theme.Button("حفظ الإعدادات",()=>{try{Directory.CreateDirectory(folder.Text);Result=new Settings{Folder=Path.GetFullPath(folder.Text),Connections=(int)con.Value,Concurrent=(int)simultaneous.Value,LimitKiB=(int)limit.Value,StartAt=schedule.Checked?at.Value:DateTime.MinValue,LineMbps=0,PerformanceRevision=22,EngineMode=mode.SelectedIndex==1?"Fixed":mode.SelectedIndex==2?"Compatibility":"Adaptive",SystemProxy=proxy.Checked};DialogResult=DialogResult.OK;}catch(Exception e){MessageBox.Show(e.Message);}},true);t.Controls.Add(b,0,10);
   }
  }
 }

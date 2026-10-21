@@ -1,7 +1,7 @@
 Unicode true
 !include "MUI2.nsh"
-Name "AWR Download Next 2.1 Turbo"
-OutFile "release\AWR-Download-Next-2.1.0-Setup-x64.exe"
+Name "AWR Download Next 2.2 Turbo"
+OutFile "release\AWR-Download-Next-2.2.0-Setup-x64.exe"
 InstallDir "$LOCALAPPDATA\Programs\AWRDownloadNext"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
@@ -21,9 +21,9 @@ Section
  CreateShortcut "$DESKTOP\AWR Download Next.lnk" "$INSTDIR\AWRDownloadNext.exe"
  CreateDirectory "$SMPROGRAMS\AWR Download Next"
  CreateShortcut "$SMPROGRAMS\AWR Download Next\AWR Download Next.lnk" "$INSTDIR\AWRDownloadNext.exe"
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "DisplayName" "AWR Download Next 2.1 Turbo"
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "DisplayName" "AWR Download Next 2.2 Turbo"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "UninstallString" '"$INSTDIR\Uninstall.exe"'
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "DisplayVersion" "2.1.0"
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "DisplayVersion" "2.2.0"
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "NoModify" 1
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "NoRepair" 1
 SectionEnd

@@ -52,29 +52,31 @@ namespace AwrNext {
   public int Version=1;public string JobId="",ETag="",Modified="";public long Size;
   public List<TurboChunk> Chunks=new List<TurboChunk>();
  }
- sealed class FatalTransferException:Exception {public FatalTransferException(string message):base(message){}}
+ class FatalTransferException:Exception {public FatalTransferException(string message):base(message){}}
+ sealed class SingleStreamRequiredException:FatalTransferException {public SingleStreamRequiredException(string message):base(message){}}
  sealed class ServerBusyException:Exception {
-  public int Delay;public ServerBusyException(int delay):base("Server is limiting requests; reducing connections."){Delay=delay;}
+  public int Delay,Code;public ServerBusyException(int delay,int code):base("HTTP "+code+": server declined an additional connection."){Delay=delay;Code=code;}
  }
  public sealed class TurboTransfer {
   readonly DownloadJob job;readonly TurboEngine engine;readonly object gate=new object();
   readonly CancellationTokenSource stop=new CancellationTokenSource();
   readonly HashSet<HttpWebRequest> requests=new HashSet<HttpWebRequest>();
   TurboMap map;FileStream file;Task running;string status="active",error="",note="";
-  int desired,maximum,active,peak,retries,failuresSinceTune,stalledWindows;
+  int desired,maximum,learnedLimit,active,peak,retries,failuresSinceTune,stalledWindows,redistributions;
   long done,speed,previousDone;double previousRate=-1,bestRate;int previousCount,bestCount;
-  DateTime notBefore=DateTime.MinValue,lastTune=DateTime.UtcNow,lastSave=DateTime.UtcNow,lastGrowth=DateTime.UtcNow;
-  bool plateau=false;readonly Stopwatch clock=Stopwatch.StartNew();double lastSample;
+  DateTime notBefore=DateTime.MinValue,lastBackoff=DateTime.MinValue,lastProgress=DateTime.UtcNow,lastTune=DateTime.UtcNow,lastSave=DateTime.UtcNow,lastGrowth=DateTime.UtcNow;
+  bool plateau=false,singleFallback=false,serverLimited=false;readonly Stopwatch clock=Stopwatch.StartNew();double lastSample;
   public TurboTransfer(DownloadJob j,TurboEngine e){job=j;engine=e;}
   public void Start(){running=Task.Run((Func<Task>)Run);}
   public async Task Stop(bool removed){stop.Cancel();AbortRequests();if(running!=null)await running;lock(gate)if(status!="complete"&&status!="error")status=removed?"removed":"paused";}
   void AbortRequests(){HttpWebRequest[] q;lock(gate)q=requests.ToArray();foreach(var r in q)try{r.Abort();}catch{}}
-  void Fail(Exception e){lock(gate){if(error=="")error=e.Message;}stop.Cancel();AbortRequests();}
+  void Fail(Exception e){lock(gate){if(error==""){error=e.Message;singleFallback=e is SingleStreamRequiredException&&done==0;}}stop.Cancel();AbortRequests();}
   public Dictionary<string,object> Snapshot(){lock(gate)return new Dictionary<string,object>{
    {"status",status},{"completedLength",done.ToString()},{"totalLength",job.Size.ToString()},
    {"downloadSpeed",status=="active"?speed.ToString():"0"},{"connections",active.ToString()},
-   {"errorCode",error==""?"0":"TURBO"},{"errorMessage",error},
-   {"engineNote",note},{"targetConnections",desired.ToString()},{"peakConnections",peak.ToString()},{"retryCount",retries.ToString()}};}
+   {"errorCode",error==""?"0":singleFallback?"RETRY_SINGLE":"TURBO"},{"errorMessage",error},
+   {"engineNote",note},{"targetConnections",desired.ToString()},{"peakConnections",peak.ToString()},{"retryCount",retries.ToString()},
+   {"partCount",map==null?"0":map.Chunks.Count.ToString()},{"completedParts",map==null?"0":map.Chunks.Count(c=>c.Done==c.Length).ToString()},{"redistributions",redistributions.ToString()},{"serverCeiling",learnedLimit.ToString()}};}
   void Open(){
    Directory.CreateDirectory(job.WorkDir);string path=job.Part+".awrmap";
    if(File.Exists(path)){
@@ -89,8 +91,8 @@ namespace AwrNext {
     chunk=Math.Max(chunk,(job.Size+8191)/8192);
     for(long at=0;at<job.Size;at+=chunk)map.Chunks.Add(new TurboChunk{Start=at,Length=Math.Min(chunk,job.Size-at)});
    }
-   maximum=Math.Max(1,Math.Min(128,Math.Min(job.Connections,map.Chunks.Count)));
-   desired=job.EngineMode=="Fixed"?maximum:Math.Min(4,maximum);
+   maximum=Math.Max(1,Math.Min(128,Math.Min(job.Connections,(int)Math.Min(128,Math.Max(1,job.Size/(256*1024))))));learnedLimit=maximum;
+   desired=job.EngineMode=="Fixed"?maximum:Math.Min(8,maximum);
    bestCount=desired;note=job.EngineMode=="Fixed"?"Turbo: fixed connection ceiling.":"Turbo: measuring throughput and adapting connections.";
    done=map.Chunks.Sum(c=>c.Done);previousDone=done;
    file=new FileStream(job.Part,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.Read,65536,FileOptions.RandomAccess);
@@ -129,28 +131,36 @@ namespace AwrNext {
    double now=clock.Elapsed.TotalSeconds,elapsed=now-lastSample;if(elapsed<=0)return;
    long delta=done-previousDone;double rate=Math.Max(0,delta/elapsed);
    speed=(long)(speed==0?rate:0.45*rate+0.55*speed);previousDone=done;lastSample=now;
-   if(job.EngineMode=="Fixed"||DateTime.UtcNow-lastTune<TimeSpan.FromSeconds(3)||stop.IsCancellationRequested)return;
+   if(serverLimited&&active>learnedLimit){learnedLimit=Math.Min(maximum,active);desired=learnedLimit;}
+   if(job.EngineMode=="Fixed"||DateTime.UtcNow-lastTune<TimeSpan.FromSeconds(1)||stop.IsCancellationRequested)return;
    lastTune=DateTime.UtcNow;
    if(speed<=0){note="Turbo: waiting for the server's first file bytes.";return;}
-   if(active<desired&&requests.Count>active&&DateTime.UtcNow-lastGrowth<TimeSpan.FromSeconds(25)){note="Turbo: allowing new connections to finish negotiation before comparing speed.";return;}
+   if(active<desired&&requests.Count>active&&DateTime.UtcNow-lastGrowth<TimeSpan.FromSeconds(5)){note="Turbo: waiting for new connections to deliver bytes.";return;}
    if(speed>bestRate){bestRate=speed;bestCount=desired;}
    if(failuresSinceTune>0){failuresSinceTune=0;previousRate=-1;plateau=false;return;}
-   double target=job.LineMbps*1000000.0/8;
-   if(job.LineMbps>0&&speed>=target*0.92){note="Turbo: close to the configured line speed; holding connections.";previousRate=-1;return;}
+   if(serverLimited){note="Turbo: continuing with the server's accepted ceiling of "+learnedLimit+" connections.";return;}
    if(plateau){note="Turbo: extra connections gave no sustained gain; keeping the faster measured setting.";return;}
-   // Require two stable windows before declaring a plateau, to allow TCP warm-up.
+   // Rapid doubling after bytes arrive; require three weak windows before settling.
    if(previousRate>0&&speed<previousRate*1.10&&desired>previousCount){
-    if(++stalledWindows<2)return;
+    if(++stalledWindows<3)return;
     desired=speed<previousRate*0.9?previousCount:Math.Min(desired,bestCount);plateau=true;
     note="Turbo: connection growth stopped after a throughput plateau.";return;
    }
    stalledWindows=0;
-   if(desired<maximum){previousRate=Math.Max(1,speed);previousCount=desired;desired=Math.Min(maximum,desired*2);lastGrowth=DateTime.UtcNow;note="Turbo: throughput improved; testing "+desired+" connections.";}
+   if(desired<learnedLimit){previousRate=Math.Max(1,speed);previousCount=desired;desired=Math.Min(learnedLimit,desired*2);lastGrowth=DateTime.UtcNow;note="Turbo: testing "+desired+" connections without a line-speed target.";}
    else note="Turbo: using the configured maximum; server and network determine further speed.";
   }}
   TurboChunk Claim(int worker){lock(gate){
    if(worker>=desired||DateTime.UtcNow<notBefore)return null;
    var c=map.Chunks.Where(x=>!x.Busy&&x.Done<x.Length).OrderByDescending(x=>x.Length-x.Done).FirstOrDefault();
+   if(c==null&&map.Chunks.Count<8192){
+    var tail=map.Chunks.Where(x=>x.Busy&&x.Length-x.Done>=512*1024).OrderByDescending(x=>x.Length-x.Done).FirstOrDefault();
+    if(tail!=null){
+     long take=((tail.Length-tail.Done)/2/(128*1024))*(128*1024);
+     c=new TurboChunk{Start=tail.Start+tail.Length-take,Length=take};tail.Length-=take;
+     map.Chunks.Add(c);map.Chunks.Sort((a,b)=>a.Start.CompareTo(b.Start));redistributions++;
+    }
+   }
    if(c!=null)c.Busy=true;return c;
   }}
   bool Finished(){lock(gate)return map.Chunks.All(c=>c.Done==c.Length);}
@@ -165,11 +175,19 @@ namespace AwrNext {
      catch(Exception e){
       if(stop.IsCancellationRequested)return;
       var busy=e as ServerBusyException;
+      bool exhausted=false;
       lock(gate){retries++;failuresSinceTune++;c.Failures=c.Done>before?0:c.Failures+1;
-       if(busy!=null){desired=Math.Max(1,desired/2);notBefore=DateTime.UtcNow.AddSeconds(busy.Delay);note="Server requested backoff; reducing concurrency to "+desired+".";delay=busy.Delay*1000;}
+       if(busy!=null){
+        if(DateTime.UtcNow-lastBackoff>TimeSpan.FromSeconds(2)){
+         int accepted=active>0?active:Math.Max(1,desired/2);learnedLimit=Math.Max(1,Math.Min(learnedLimit,accepted));desired=learnedLimit;serverLimited=true;lastBackoff=DateTime.UtcNow;
+        }
+        if(busy.Code!=403||active==0)notBefore=DateTime.UtcNow.AddSeconds(busy.Delay);
+        note="HTTP "+busy.Code+": keeping accepted connections and retrying the rejected part; ceiling "+desired+".";delay=busy.Delay*1000;
+       }
        else{note="Retrying interrupted range from its last saved byte.";delay=Math.Min(10000,500*(1<<Math.Min(4,c.Failures)));}
+       exhausted=c.Failures>=8&&(busy==null||DateTime.UtcNow-lastProgress>TimeSpan.FromSeconds(15));
       }
-      if(c.Failures>=8){Fail(new Exception("Repeated range failures. "+e.Message));return;}
+      if(exhausted){if(busy!=null&&busy.Code==403&&done==0)Fail(new SingleStreamRequiredException("Server rejects ranged requests; retrying a single stream."));else Fail(new Exception("Repeated range failures. "+e.Message));return;}
      }finally{lock(gate)c.Busy=false;}
      if(delay>0)await Task.Delay(delay,stop.Token);
     }
@@ -188,7 +206,7 @@ namespace AwrNext {
     request.ServicePoint.ConnectionLimit=128;request.ServicePoint.Expect100Continue=false;
     request.AddRange(from,end);request.Headers[HttpRequestHeader.AcceptEncoding]="identity";
     request.CookieContainer=Util.Cookies(direct,job.TransferCookie);
-    if(job.Referer!="")request.Referer=job.Referer;
+    if(job.TransferReferer!="")request.Referer=job.TransferReferer;else if(job.Referer!="")request.Referer=job.Referer;
     if(job.ETag!=""&&!job.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase))request.Headers[HttpRequestHeader.IfMatch]=job.ETag;
     else if(job.Modified!="")request.Headers[HttpRequestHeader.IfUnmodifiedSince]=job.Modified;
     lock(gate)requests.Add(request);
@@ -199,20 +217,21 @@ namespace AwrNext {
      catch(WebException e){
       var er=e.Response as HttpWebResponse;
       if(er!=null){using(er){int code=(int)er.StatusCode;
-       if(code==429||code==503){int wait;DateTime at;if(!int.TryParse(er.Headers["Retry-After"],out wait)){wait=DateTime.TryParse(er.Headers["Retry-After"],out at)?(int)Math.Ceiling((at.ToUniversalTime()-DateTime.UtcNow).TotalSeconds):4;}throw new ServerBusyException(Math.Max(1,Math.Min(300,wait)));}
+       if(code==403||code==429||code==503){int wait;DateTime at;if(!int.TryParse(er.Headers["Retry-After"],out wait)){wait=DateTime.TryParse(er.Headers["Retry-After"],out at)?(int)Math.Ceiling((at.ToUniversalTime()-DateTime.UtcNow).TotalSeconds):code==403?1:4;}throw new ServerBusyException(Math.Max(1,Math.Min(300,wait)),code);}
        if(code==412||code==416)throw new FatalTransferException("Remote file changed or requested range was rejected (HTTP "+code+"). Use a fresh link or Restart.");
-       if(code==401||code==403||code==404)throw new FatalTransferException("HTTP "+code+": refresh the direct link or its login headers.");
+       if(code==401||code==404)throw new FatalTransferException("HTTP "+code+": refresh the direct link or its login headers.");
       }}throw;
      }
      using(response){
+      if(response.StatusCode==HttpStatusCode.OK)throw new SingleStreamRequiredException("Server ignored a range request; a single stream is required.");
       var match=Regex.Match(response.Headers["Content-Range"]??"",@"^bytes (\d+)-(\d+)/(\d+)$",RegexOptions.IgnoreCase);
       long a,b,total;
       if(response.StatusCode!=HttpStatusCode.PartialContent||!match.Success||!long.TryParse(match.Groups[1].Value,out a)||!long.TryParse(match.Groups[2].Value,out b)||!long.TryParse(match.Groups[3].Value,out total)||a!=from||b!=end||total!=job.Size)throw new FatalTransferException("Server returned an invalid range. Partial bytes preserved; use Compatibility mode for a new download.");
       if(response.ContentLength>=0&&response.ContentLength!=end-from+1)throw new FatalTransferException("Content-Length does not match the requested range.");
       string encoding=response.ContentEncoding;
       if(!String.IsNullOrEmpty(encoding)&&!String.Equals(encoding,"identity",StringComparison.OrdinalIgnoreCase))throw new FatalTransferException("Compressed range response rejected.");
-      if(job.ETag!=""&&!job.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase)&&response.Headers["ETag"]!=job.ETag)throw new FatalTransferException("Remote ETag changed during transfer; mixed file bytes were rejected.");
-      if(job.Modified!=""&&(job.ETag==""||job.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase))&&response.Headers["Last-Modified"]!=job.Modified)throw new FatalTransferException("Remote modification date changed during transfer.");
+      if(job.ETag!=""&&!job.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase)&&!String.IsNullOrEmpty(response.Headers["ETag"])&&response.Headers["ETag"]!=job.ETag)throw new FatalTransferException("Remote ETag changed during transfer; mixed file bytes were rejected.");
+      if(job.Modified!=""&&(job.ETag==""||job.ETag.StartsWith("W/",StringComparison.OrdinalIgnoreCase))&&!String.IsNullOrEmpty(response.Headers["Last-Modified"])&&response.Headers["Last-Modified"]!=job.Modified)throw new FatalTransferException("Remote modification date changed during transfer.");
       lock(gate){active++;peak=Math.Max(peak,active);counted=true;}
       using(var input=response.GetResponseStream()){
        byte[] buffer=new byte[65536];long remaining=end-from+1;
@@ -220,7 +239,9 @@ namespace AwrNext {
         timeout.CancelAfter(20000);int n=await input.ReadAsync(buffer,0,(int)Math.Min(buffer.Length,remaining),timeout.Token);timeout.CancelAfter(Timeout.Infinite);
         if(n==0)throw new IOException("Connection ended before the range was complete.");
         await engine.Rate.Consume(n,stop.Token);stop.Token.ThrowIfCancellationRequested();
-        lock(gate){try{file.Position=chunk.Start+chunk.Done;file.Write(buffer,0,n);}catch(Exception e){throw new FatalTransferException("Cannot write download data: "+e.Message);}chunk.Done+=n;done+=n;}
+        bool finished;
+        lock(gate){int write=(int)Math.Min(n,chunk.Length-chunk.Done);try{file.Position=chunk.Start+chunk.Done;file.Write(buffer,0,write);}catch(Exception e){throw new FatalTransferException("Cannot write download data: "+e.Message);}chunk.Done+=write;done+=write;lastProgress=DateTime.UtcNow;finished=chunk.Done==chunk.Length;}
+        if(finished){if(remaining>n)request.Abort();break;}
         remaining-=n;
        }
       }
