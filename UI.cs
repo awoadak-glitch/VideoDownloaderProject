@@ -35,7 +35,7 @@ namespace AwrNext {
   public static Label Label(string t,int size=10,bool bold=false){return new Label{Text=t,AutoSize=true,ForeColor=Text,Font=new Font("Segoe UI",size,bold?FontStyle.Bold:FontStyle.Regular),Margin=new Padding(8)};}
   public static void Style(Form f){f.BackColor=Bg;f.ForeColor=Text;f.Font=new Font("Segoe UI",10);f.StartPosition=FormStartPosition.CenterParent;f.AutoScaleMode=AutoScaleMode.Dpi;}
   public static TextBox Input(string t=""){return new TextBox{Text=t,BackColor=Panel,ForeColor=Text,BorderStyle=BorderStyle.FixedSingle,Dock=DockStyle.Fill,Margin=new Padding(7),RightToLeft=RightToLeft.No};}
-  public static NumericUpDown Number(int value,int min,int max){return new NumericUpDown{Value=value,Minimum=min,Maximum=max,BackColor=Panel,ForeColor=Text,Width=100,Margin=new Padding(7)};}
+  public static NumericUpDown Number(int value,int min,int max){return new NumericUpDown{Minimum=min,Maximum=max,Value=Math.Max(min,Math.Min(max,value)),BackColor=Panel,ForeColor=Text,Width=100,Margin=new Padding(7)};}
   public static void Field(TableLayoutPanel t,string label,Control c,int row){t.Controls.Add(Label(label),1,row);t.Controls.Add(c,0,row);}
  }
  public class MainForm:Form {
