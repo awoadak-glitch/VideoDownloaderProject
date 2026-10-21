@@ -54,9 +54,9 @@ $nsis = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
 if (-not (Test-Path $nsis)) { choco install nsis --yes --no-progress; if ($LASTEXITCODE -ne 0) { throw 'NSIS install failed' } }
 & $nsis /V2 installer.nsi
 if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
-$installPath="$PSScriptRoot/installer-smoke"
+$installPath=Join-Path $PSScriptRoot 'installer-smoke'
 $setup=Start-Process "$PSScriptRoot/release/AWR-Download-Next-2.1.0-Setup-x64.exe" -ArgumentList "/S /D=$installPath" -Wait -PassThru
-if ($setup.ExitCode -ne 0 -or -not (Test-Path "$installPath/AWRDownloadNext.exe")) { throw 'Installer smoke failed' }
+if ($setup.ExitCode -ne 0 -or -not (Test-Path "$installPath/AWRDownloadNext.exe")) { Write-Host "Installer exit: $($setup.ExitCode), path: $installPath"; if(Test-Path $installPath){Get-ChildItem $installPath -Recurse}; throw 'Installer smoke failed' }
 $env:AWR_TEST_DATA="$root/installed-state"
 $env:AWR_TEST_SCREENSHOT="$root/ui-installed.png"
 $env:AWR_TEST_ENGINE="$installPath/Engine/aria2c.exe"

@@ -22,7 +22,7 @@ Section
  CreateDirectory "$SMPROGRAMS\AWR Download Next"
  CreateShortcut "$SMPROGRAMS\AWR Download Next\AWR Download Next.lnk" "$INSTDIR\AWRDownloadNext.exe"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "DisplayName" "AWR Download Next 2.1 Turbo"
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "UninstallString" '$"$INSTDIR\Uninstall.exe$"'
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "UninstallString" '"$INSTDIR\Uninstall.exe"'
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "DisplayVersion" "2.1.0"
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "NoModify" 1
  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AWRDownloadNext" "NoRepair" 1
