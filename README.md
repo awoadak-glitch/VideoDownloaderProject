@@ -1,15 +1,39 @@
-# AWR Download Next 2.0
+# AWR Download Next 2.1 Turbo — Windows x64
 
-Standalone Windows download manager. This branch is independent of the original main branch.
+واجهة عربية لمدير تنزيلات HTTP/HTTPS، Windows 10/11 مع .NET Framework 4.8.
 
-- Arabic native WinForms interface, HTTP/HTTPS downloads and 1–16 connections.
-- Pause/resume with persisted aria2 maps and remote identity checks.
-- Retry interrupted transfers, queue, scheduling, global rate cap, link refresh.
-- Check length and SHA-256; verify against a supplied reference before publishing a file.
-- Existing-file protection, HTML rejection and Windows-safe filenames.
+## التشغيل
 
-Run build-windows.ps1 on Windows with .NET Framework 4.8 and Python for the integration fixtures. GitHub Actions compiles and tests the application on windows-2022. Engine archive SHA-256 is pinned. The separate aria2 binary and its license remain unmodified.
+شغّل ملف التثبيت، أو فك ضغط النسخة المحمولة بالكامل ثم افتح AWRDownloadNext.exe.
+أغلق النسخة السابقة أولًا. لا تحذف مجلدات .awr-parts؛ تحتوي التحميلات غير المكتملة.
 
-This first release covers direct HTTP/HTTPS file links. Browser integration and automatic video/HLS/DASH detection are not included. Server limits and network bandwidth still control download speed. Calculating a hash without a trusted reference does not prove authenticity. Scheduling requires an awake computer and the app running.
+من الإعدادات اختر «إعداد خط 180 Mbps» ثم احفظ. أضف الملف من رابط التنزيل المباشر.
+الوضع التكيفي يبدأ بأربع اتصالات ويزيد عندما تتحسن السرعة، حتى سقف 128.
+هذا سقف، وقد يستخدم اتصالات أقل لحجم الملف أو أداء الخادم أو رفض الطلبات.
+الإعدادات الجديدة تخص التحميلات الجديدة. التحميلات السابقة تستأنف بمحركها الأصلي.
 
-Source files: Core.cs, UI.cs, Tests.cs, fixture.py. No credentials or user download history are included.
+## التغييرات الفعلية
+
+- محرك Turbo مستقل مكتوب بـ C#، مع تقسيم الملف إلى نطاقات صغيرة وطابور عمل مشترك.
+- الاتصالات التي تنهي جزءًا تأخذ جزءًا متبقيًا؛ إعادة المحاولة تبدأ من آخر بايت مكتوب.
+- زيادة تكيفية بحسب التحسن، وتراجع عند HTTP 429/503 مع احترام Retry-After.
+- حتى 128 طلب تنزيل فعليًا عبر التطبيق كله، وحد لكل ملف وخادم داخل المحرك.
+- مصادقة نطاق كل استجابة وحجمها وETag/Last-Modified، وكتابة مباشرة دون مرحلة دمج.
+- حفظ دوري للخريطة بعد تفريغ بيانات الملف إلى القرص؛ استئناف بعد توقف البرنامج.
+- SHA-256 مرجعي اختياري. حساب البصمة وحده، دون مرجع موثوق، لا يثبت مطابقة المصدر.
+- عرض السرعة بالـMB/s وMbps ونسبة المقارنة بسرعة الخط المدخلة، وتقرير تشخيص دون الرابط الكامل أو Cookie.
+- وضع aria2 للتوافق والملفات غير القابلة للتقسيم، واستكمال ملفات الإصدار 2.0.
+
+180 Mbps يساوي نظريًا 22.5 MB/s قبل المصاريف الإضافية. الإعداد ليس قياسًا لسرعة الإنترنت.
+قد يحدّ الموقع السرعة لكل حساب أو عنوان IP؛ زيادة الاتصالات لا تتجاوز ذلك أو تزيد سرعة الاشتراك.
+الاختبارات المرفقة على خادم محلي مُتحكم به وليست مقارنة مع IDM أو قياسًا لاتصال المستخدم.
+لا يتضمن البرنامج اعتراض المتصفح أو التقاط جميع أنواع الفيديو، ولا يستخرج رابط ملف من كل صفحة موقع.
+
+التحميلات/history محفوظة في %LOCALAPPDATA%\AWR\DownloadNext. بيانات الحساب المحلية مشفرة بحساب Windows.
+لا تغيّر المحرك أو تستبدل خرائط الأجزاء يدويًا أثناء تنزيل قائم.
+
+## المصدر والبناء
+
+الكود في https://github.com/awoadak-glitch/VideoDownloaderProject/tree/awr-download-next-2.0
+شغّل build-windows.ps1 على Windows مع .NET Framework وPython وNSIS.
+aria2 1.37.0 مضمّن دون تعديل، بترخيص GPL؛ ترخيصه داخل Engine ومصدره الموافق داخل Source.

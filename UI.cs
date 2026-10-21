@@ -12,8 +12,8 @@ using Microsoft.Win32;
 
 [assembly:AssemblyTitle("AWR Download Next")]
 [assembly:AssemblyProduct("AWR Download Next")]
-[assembly:AssemblyVersion("2.0.0.0")]
-[assembly:AssemblyFileVersion("2.0.0.0")]
+[assembly:AssemblyVersion("2.1.0.0")]
+[assembly:AssemblyFileVersion("2.1.0.0")]
 namespace AwrNext {
  static class Program {
   public static string EnginePath { get { return Environment.GetEnvironmentVariable("AWR_TEST_ENGINE")??Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"Engine","aria2c.exe"); } }
@@ -43,20 +43,20 @@ namespace AwrNext {
   System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=500}; bool ready=false,closing=false,finishedClosing=false,refreshing=false; string[] startup;
   HashSet<string> seenComplete=new HashSet<string>();
   public MainForm(string[] args){
-   startup=args;Theme.Style(this);Text="AWR Download Next 2.0";Width=1180;Height=780;MinimumSize=new Size(970,640);StartPosition=FormStartPosition.CenterScreen;
-   Icon=SystemIcons.Application;
-   var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=7,Padding=new Padding(20)};
+   startup=args;Theme.Style(this);Text="AWR Download Next 2.1 • Turbo";Width=1240;Height=800;MinimumSize=new Size(1100,700);StartPosition=FormStartPosition.CenterScreen;
+   try{Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);}catch{Icon=SystemIcons.Application;}
+   var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=11,Padding=new Padding(20)};
    layout.RowStyles.Add(new RowStyle(SizeType.Absolute,82));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,48));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,50));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,46));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,112));layout.RowStyles.Add(new RowStyle(SizeType.Absolute,36));Controls.Add(layout);
    var head=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2};head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,60));head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,40));
    var brand=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown};
-   brand.Controls.Add(Theme.Label("AWR  /  DOWNLOAD NEXT",22,true));var tag=Theme.Label("تحميلاتك محفوظة • تحكم كامل • فحص الملفات",10);tag.ForeColor=Theme.Muted;brand.Controls.Add(tag);head.Controls.Add(brand,0,0);
+   brand.Controls.Add(Theme.Label("AWR  /  NEXT TURBO",22,true));var tag=Theme.Label("اتصالات تكيفية • تنزيل مجزأ • استئناف محفوظ",10);tag.ForeColor=Theme.Muted;brand.Controls.Add(tag);head.Controls.Add(brand,0,0);
    stats=Theme.Label("جارٍ تشغيل محرك التنزيل…",12,true);stats.Dock=DockStyle.Fill;stats.TextAlign=ContentAlignment.MiddleRight;head.Controls.Add(stats,1,0);layout.Controls.Add(head,0,0);
    var bar=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft};
    bar.Controls.Add(Theme.Button("+  إضافة رابط",()=>Add(),true));
    bar.Controls.Add(Theme.Button("إضافة عدة روابط",()=>Batch()));
    bar.Controls.Add(Theme.Button("إيقاف الكل",()=>Run(async()=>{foreach(var j in manager.State.Jobs.ToArray())await manager.Pause(j);})));
    bar.Controls.Add(Theme.Button("استئناف الكل",()=>Run(async()=>{foreach(var j in manager.State.Jobs.ToArray())manager.Resume(j);await Task.CompletedTask;})));
-   bar.Controls.Add(Theme.Button("الإعدادات",()=>Settings()));layout.Controls.Add(bar,0,1);
+   bar.Controls.Add(Theme.Button("الإعدادات",()=>Settings()));bar.Controls.Add(Theme.Button("تقرير السرعة",()=>Diagnostics()));layout.Controls.Add(bar,0,1);
    var actions=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft};
    actions.Controls.Add(Theme.Button("استئناف المحدد",()=>SelectedRun(async j=>{manager.Resume(j);await Task.CompletedTask;}),true));
    actions.Controls.Add(Theme.Button("إيقاف مؤقت",()=>SelectedRun(j=>manager.Pause(j))));
@@ -114,6 +114,13 @@ namespace AwrNext {
    if(!ready)return;
    using(var d=new SettingsDialog(manager.State.Settings)){if(d.ShowDialog(this)==DialogResult.OK)Run(async()=>{manager.State.Settings=d.Result;await manager.ApplySettings();RefreshJobs();});}
   }
+  void Diagnostics(){
+   var j=Selected();if(j==null){MessageBox.Show(this,"اختر تحميلًا أولًا.");return;}
+   using(var d=new SaveFileDialog{Filter="Text report|*.txt",FileName="AWR-speed-report.txt"})if(d.ShowDialog(this)==DialogResult.OK){
+    var report="AWR Download Next 2.1\r\nTime UTC: "+DateTime.UtcNow.ToString("o")+"\r\nHost: "+new Uri(j.Url).Host+"\r\nStatus: "+j.Status+"\r\nEngine / mode: "+j.Backend+" / "+j.EngineMode+"\r\nRange support: "+j.Range+"\r\nActive / adaptive target / ceiling: "+j.ActiveConnections+" / "+j.TargetConnections+" / "+j.Connections+"\r\nPeak active connections: "+j.PeakConnections+"\r\nRetries: "+j.RetryCount+"\r\nCurrent speed bytes/s: "+j.Speed+"\r\nCurrent speed Mbps: "+(j.Speed*8/1000000.0).ToString("0.00")+"\r\nConfigured line Mbps (not a speed test): "+j.LineMbps+"\r\nApplication limit KiB/s: "+manager.State.Settings.LimitKiB+"\r\nSystem proxy: "+j.SystemProxy+"\r\nCompleted / total bytes: "+j.Done+" / "+j.Size+"\r\nExpected SHA256 supplied: "+(j.ExpectedHash!="")+"\r\nEngine note: "+j.EngineNote+"\r\n";
+    File.WriteAllText(d.FileName,report,new System.Text.UTF8Encoding(true));MessageBox.Show(this,"تم حفظ التقرير دون الرابط الكامل أو كلمات المرور.");
+   }
+  }
   public static string Prompt(string title,string value){
    using(var f=new Form{Text=title,Width=750,Height=180}){Theme.Style(f);var t=Theme.Input(value);t.Dock=DockStyle.Top;var b=Theme.Button("حفظ",()=>f.DialogResult=DialogResult.OK,true);b.Dock=DockStyle.Bottom;f.Controls.Add(t);f.Controls.Add(b);return f.ShowDialog()==DialogResult.OK?t.Text.Trim():null;}
   }
@@ -133,18 +140,18 @@ namespace AwrNext {
     for(int i=0;i<list.Length;i++){
      var j=list[i];string eta=j.Speed>0&&j.Size>0?TimeSpan.FromSeconds(Math.Max(0,(j.Size-j.Done)/j.Speed)).ToString(@"hh\:mm\:ss"):"—";
      var row=grid.Rows[i];row.Cells[0].Value=j.Name;row.Cells[1].Value=Util.Bytes(j.Size);row.Cells[2].Value=j.Size>0?Math.Min(100,100.0*j.Done/j.Size).ToString("0.0")+"%":(j.Status=="Complete"?"100%":"—");
-     row.Cells[3].Value=j.Speed>0?Util.Bytes(j.Speed)+"/s":"—";row.Cells[4].Value=eta;row.Cells[5].Value=j.ActiveConnections+" / "+j.Connections;row.Cells[6].Value=Status(j.Status);
+     row.Cells[3].Value=j.Speed>0?Util.Bytes(j.Speed)+"/s":"—";row.Cells[4].Value=eta;row.Cells[5].Value=j.ActiveConnections+" / "+(j.Backend=="aria2"?Math.Min(16,j.Connections):j.Connections);row.Cells[6].Value=Status(j.Status);
      row.Cells[6].Style.ForeColor=j.Status=="Complete"?Theme.Accent:(j.Status=="Error"?Color.Salmon:Theme.Text);
     }
     long speed=manager.State.Jobs.Sum(j=>j.Speed);int active=manager.State.Jobs.Count(j=>j.Status=="Downloading");
-    stats.Text=Util.Bytes(speed)+"/s  •  "+active+" تحميل نشط";
+    double mbps=speed*8/1000000.0;stats.Text=Util.Bytes(speed)+"/s  •  "+mbps.ToString("0.0")+" Mbps\n"+(manager.State.Settings.LineMbps>0?(100*mbps/manager.State.Settings.LineMbps).ToString("0")+"% من خط "+manager.State.Settings.LineMbps+" Mbps  •  ":"")+active+" تحميل نشط";
     foreach(var j in manager.State.Jobs.Where(j=>j.Status=="Complete"&&!seenComplete.Contains(j.Id))){seenComplete.Add(j.Id);tray.ShowBalloonTip(3000,"اكتمل التنزيل",j.Name,ToolTipIcon.Info);}
     banner.Text=manager.State.Settings.StartAt>DateTime.Now?"بدء الطابور: "+manager.State.Settings.StartAt.ToString("yyyy-MM-dd HH:mm")+" — أبقِ البرنامج مفتوحًا":"الاستئناف يتطلب دعم الخادم. فحص البصمة المرجعية متاح عند إضافة الملف.";
     ShowDetail();
    }finally{refreshing=false;}
   }
   void ShowDetail(){
-   if(detail==null)return;var j=Selected();detail.Text=j==null?"اختر ملفًا لعرض تفاصيله. أضف رابطًا مباشرًا لبدء التنزيل.":j.Name+"\n"+Util.Bytes(j.Done)+" / "+Util.Bytes(j.Size)+"    •    "+(j.Range?"يدعم التنزيل المجزأ والاستئناف":"دعم الاستئناف غير متاح / لم يفحص بعد")+"\n"+j.Message+"\n"+(j.ActualHash!=""?"SHA-256: "+j.ActualHash:j.Target);
+   if(detail==null)return;var j=Selected();detail.Text=j==null?"Turbo يزيد الاتصالات تدريجيًا بحسب الأداء حتى السقف المحدد. أضف رابطًا مباشرًا للبدء.":j.Name+"  •  "+j.Backend+" / "+j.EngineMode+"\n"+Util.Bytes(j.Done)+" / "+Util.Bytes(j.Size)+"    •    "+(j.Range?"يدعم التنزيل المجزأ والاستئناف":"دعم الاستئناف غير متاح / لم يفحص بعد")+"  •  إعادة المحاولة: "+j.RetryCount+"\n"+(j.Message!=""?j.Message:j.EngineNote)+"\n"+(j.ActualHash!=""?"SHA-256: "+j.ActualHash:j.Target);
   }
   void PaintProgress(object sender,DataGridViewCellPaintingEventArgs e){
    if(e.RowIndex<0||e.ColumnIndex!=2)return;var j=grid.Rows[e.RowIndex].Tag as DownloadJob;if(j==null)return;
@@ -167,23 +174,28 @@ namespace AwrNext {
    Theme.Style(this);Text="إضافة تحميل جديد";Width=850;Height=590;MinimumSize=new Size(750,590);MaximizeBox=false;MinimizeBox=false;
    var t=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=10,Padding=new Padding(18)};t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,75));t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,25));
    for(int i=0;i<8;i++)t.RowStyles.Add(new RowStyle(SizeType.Absolute,45));t.RowStyles.Add(new RowStyle(SizeType.Percent,100));t.RowStyles.Add(new RowStyle(SizeType.Absolute,50));Controls.Add(t);
-   url=Theme.Input();name=Theme.Input();folder=Theme.Input(settings.Folder);hash=Theme.Input();referrer=Theme.Input();cookie=Theme.Input();cookie.UseSystemPasswordChar=true;connections=Theme.Number(settings.Connections,1,16);
+   url=Theme.Input();name=Theme.Input();folder=Theme.Input(settings.Folder);hash=Theme.Input();referrer=Theme.Input();cookie=Theme.Input();cookie.UseSystemPasswordChar=true;connections=Theme.Number(settings.Connections,1,128);
    try{if(Clipboard.ContainsText()){string s=Clipboard.GetText().Trim();if(Util.ValidUrl(s))url.Text=s;}}catch{}
    Theme.Field(t,"رابط الملف المباشر",url,0);Theme.Field(t,"اسم الملف (اختياري)",name,1);
    var dest=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2};dest.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));dest.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,55));dest.Controls.Add(folder,0,0);var browse=Theme.Button("…",()=>{using(var d=new FolderBrowserDialog{SelectedPath=folder.Text})if(d.ShowDialog()==DialogResult.OK)folder.Text=d.SelectedPath;});browse.Width=42;dest.Controls.Add(browse,1,0);Theme.Field(t,"مجلد الحفظ",dest,2);
-   Theme.Field(t,"عدد الاتصالات",connections,3);Theme.Field(t,"SHA-256 (اختياري)",hash,4);Theme.Field(t,"Referer (اختياري)",referrer,5);Theme.Field(t,"Cookie (اختياري)",cookie,6);
-   var hint=new Label{Dock=DockStyle.Fill,ForeColor=Theme.Muted,Text="8 اتصالات نقطة بداية مناسبة، و16 خيار متاح للخوادم التي تسمح بذلك.\nالبصمة المرجعية من ناشر الملف هي التي تؤكد مطابقته للأصل.\nروابط صفحات المواقع تحتاج استخراج رابط الملف أولًا.",Padding=new Padding(6)};t.Controls.Add(hint,0,7);t.SetColumnSpan(hint,2);t.SetRowSpan(hint,2);
+   Theme.Field(t,"سقف الاتصالات",connections,3);Theme.Field(t,"SHA-256 (اختياري)",hash,4);Theme.Field(t,"Referer (اختياري)",referrer,5);Theme.Field(t,"Cookie (اختياري)",cookie,6);
+   var hint=new Label{Dock=DockStyle.Fill,ForeColor=Theme.Muted,Text="الوضع: "+settings.EngineMode+". Turbo يبدأ بعدد قليل ويزيد عندما تتحسن السرعة.\n128 سقف للاتصالات، وليس عددًا يفتح دائمًا. وضع التوافق أقصاه 16.\nالبصمة المرجعية تؤكد المطابقة للأصل. استخدم رابط الملف المباشر.",Padding=new Padding(6)};t.Controls.Add(hint,0,7);t.SetColumnSpan(hint,2);t.SetRowSpan(hint,2);
    var buttons=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft};buttons.Controls.Add(Theme.Button("بدء التنزيل",()=>{if(!Util.ValidUrl(Url)){MessageBox.Show("أدخل رابط HTTP أو HTTPS مباشرًا.");return;}if(Folder==""){MessageBox.Show("اختر مجلد الحفظ.");return;}DialogResult=DialogResult.OK;},true));buttons.Controls.Add(Theme.Button("إلغاء",()=>DialogResult=DialogResult.Cancel));t.Controls.Add(buttons,0,9);t.SetColumnSpan(buttons,2);
   }
  }
  public class SettingsDialog:Form {
   public Settings Result;public SettingsDialog(Settings old){
-   Theme.Style(this);Text="إعدادات التنزيل";Width=740;Height=440;MaximizeBox=false;MinimizeBox=false;
-   var t=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=7,Padding=new Padding(20)};t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,60));t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,40));for(int i=0;i<7;i++)t.RowStyles.Add(new RowStyle(SizeType.Absolute,47));Controls.Add(t);
-   var folder=Theme.Input(old.Folder);var con=Theme.Number(old.Connections,1,16);var simultaneous=Theme.Number(old.Concurrent,1,8);var limit=Theme.Number(old.LimitKiB,0,2000000);
+   Theme.Style(this);Text="إعدادات Turbo • تطبق على التحميلات الجديدة";Width=850;Height=660;MaximizeBox=false;MinimizeBox=false;
+   var t=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=11,Padding=new Padding(20)};t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,60));t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,40));for(int i=0;i<11;i++)t.RowStyles.Add(new RowStyle(SizeType.Absolute,51));Controls.Add(t);
+   var folder=Theme.Input(old.Folder);var con=Theme.Number(old.Connections,1,128);var simultaneous=Theme.Number(old.Concurrent,1,8);var limit=Theme.Number(old.LimitKiB,0,2000000);var line=Theme.Number(old.LineMbps,0,100000);
+   var mode=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Dock=DockStyle.Fill,Margin=new Padding(7)};mode.Items.AddRange(new object[]{"Turbo • تكيفي (موصى به)","Turbo • سقف ثابت","aria2 • توافق"});mode.SelectedIndex=old.EngineMode=="Fixed"?1:old.EngineMode=="Compatibility"?2:0;
+   var proxy=new CheckBox{Text="استخدام إعدادات بروكسي Windows",Checked=old.SystemProxy,AutoSize=true,ForeColor=Theme.Text};
    var schedule=new CheckBox{Text="تفعيل وقت بدء الطابور",Checked=old.StartAt>DateTime.Now,AutoSize=true,ForeColor=Theme.Text};var at=new DateTimePicker{Format=DateTimePickerFormat.Custom,CustomFormat="yyyy-MM-dd HH:mm",Value=old.StartAt>DateTime.Now?old.StartAt:DateTime.Now.AddHours(1),Width=230};
    Theme.Field(t,"مجلد الحفظ الافتراضي",folder,0);Theme.Field(t,"اتصالات لكل ملف جديد",con,1);Theme.Field(t,"الملفات المتزامنة",simultaneous,2);Theme.Field(t,"حد السرعة KB/s (0 = مفتوح)",limit,3);t.Controls.Add(schedule,0,4);Theme.Field(t,"بدء الملفات المنتظرة",at,5);
-   var b=Theme.Button("حفظ الإعدادات",()=>{try{Directory.CreateDirectory(folder.Text);Result=new Settings{Folder=Path.GetFullPath(folder.Text),Connections=(int)con.Value,Concurrent=(int)simultaneous.Value,LimitKiB=(int)limit.Value,StartAt=schedule.Checked?at.Value:DateTime.MinValue};DialogResult=DialogResult.OK;}catch(Exception e){MessageBox.Show(e.Message);}},true);t.Controls.Add(b,0,6);
+   Theme.Field(t,"المحرك",mode,6);Theme.Field(t,"سرعة خطك Mbps (للمقارنة)",line,7);t.Controls.Add(proxy,0,8);t.SetColumnSpan(proxy,2);
+   var fast=Theme.Button("إعداد خط 180 Mbps",()=>{mode.SelectedIndex=0;con.Value=128;simultaneous.Value=1;limit.Value=0;line.Value=180;},true);fast.Width=230;t.Controls.Add(fast,0,9);
+   var b=Theme.Button("حفظ الإعدادات",()=>{try{Directory.CreateDirectory(folder.Text);Result=new Settings{Folder=Path.GetFullPath(folder.Text),Connections=(int)con.Value,Concurrent=(int)simultaneous.Value,LimitKiB=(int)limit.Value,StartAt=schedule.Checked?at.Value:DateTime.MinValue,LineMbps=(int)line.Value,EngineMode=mode.SelectedIndex==1?"Fixed":mode.SelectedIndex==2?"Compatibility":"Adaptive",SystemProxy=proxy.Checked};DialogResult=DialogResult.OK;}catch(Exception e){MessageBox.Show(e.Message);}},true);t.Controls.Add(b,0,10);
   }
  }
 }
+

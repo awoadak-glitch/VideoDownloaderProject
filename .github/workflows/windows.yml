@@ -8,7 +8,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-2022
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -18,7 +18,17 @@ jobs:
         run: ./build-windows.ps1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: AWR-Download-Next-Windows-Verified
+          name: AWR-Download-Next-2.1.0-Windows-Verified
           path: release/*
           retention-days: 90
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: AWR-test-diagnostics
+          path: |
+            ui-*.png
+            fixture-error.log
+            release/WINDOWS-TEST-REPORT.txt
+          retention-days: 7

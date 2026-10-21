@@ -18,7 +18,8 @@ namespace AwrNext {
   public string Id=Guid.NewGuid().ToString("N"), Url="", Name="", Folder="", Referer="", Cookie="", UserAgent="Mozilla/5.0 AWRDownloadNext/2.0";
   public string Status="Queued", Message="", Gid="", ETag="", Modified="", ExpectedHash="", ActualHash="";
   public long Size=-1, Done=0, Speed=0;
-  public int Connections=8, ActiveConnections=0;
+  public int Connections=128, ActiveConnections=0, TargetConnections=0, PeakConnections=0, RetryCount=0;
+  public string EngineMode="Adaptive",Backend="",EngineNote=""; public int LineMbps=180;public bool SystemProxy=true;
   public bool Range=false, ReadyToFinalize=false, NameFromServer=false;
   public DateTime Added=DateTime.UtcNow;
   public string WorkDir { get { return Path.Combine(Folder,".awr-parts",Id); } }
@@ -27,7 +28,8 @@ namespace AwrNext {
  }
  public class Settings {
   public string Folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"Downloads");
-  public int Connections=8, Concurrent=2, LimitKiB=0;
+  public int Connections=128, Concurrent=1, LimitKiB=0, LineMbps=180;
+  public string EngineMode="Adaptive"; public bool SystemProxy=true;
   public DateTime StartAt=DateTime.MinValue;
  }
  public class State { public List<DownloadJob> Jobs=new List<DownloadJob>(); public Settings Settings=new Settings(); }
@@ -61,7 +63,7 @@ namespace AwrNext {
   public static async Task<RemoteInfo> Fetch(DownloadJob j) {
    if(!Util.ValidUrl(j.Url)) throw new Exception("Use a direct HTTP or HTTPS download link.");
    Util.Header(j.Cookie);Util.Header(j.Referer);Util.Header(j.UserAgent);
-   using(var h=new HttpClientHandler{AllowAutoRedirect=true,AutomaticDecompression=DecompressionMethods.None,UseCookies=false})
+   using(var h=new HttpClientHandler{AllowAutoRedirect=true,AutomaticDecompression=DecompressionMethods.None,UseCookies=false,UseProxy=j.SystemProxy})
    using(var c=new HttpClient(h){Timeout=TimeSpan.FromSeconds(25)})
    using(var q=new HttpRequestMessage(HttpMethod.Get,j.Url)) {
     q.Headers.Range=new System.Net.Http.Headers.RangeHeaderValue(0,0);
@@ -97,6 +99,7 @@ namespace AwrNext {
   }
  }
  public sealed class AriaEngine:IDisposable {
+  readonly TurboEngine turbo=new TurboEngine();
   Process process; HttpClient http; string secret; int port; long counter;
   public async Task Start(string exe,string data) {
    Directory.CreateDirectory(data);
@@ -113,6 +116,9 @@ namespace AwrNext {
    throw new Exception("Download engine did not start. "+(last==null?"":last.Message));
   }
   public async Task<object> Call(string method,params object[] args) {
+   if(args.Length>0&&args[0] is string&&turbo.Owns((string)args[0]))return await turbo.Call(method,(string)args[0]);
+   if(method=="shutdown")await turbo.Shutdown();
+   if(method=="changeGlobalOption"&&args.Length>0){var options=args[0] as Dictionary<string,string>;string rate;if(options!=null&&options.TryGetValue("max-overall-download-limit",out rate)){int kib;turbo.Limit(int.TryParse(rate.TrimEnd('K'),out kib)?kib:0);}}
    var pp=new List<object>{"token:"+secret};pp.AddRange(args);
    var json=Util.Json().Serialize(new{jsonrpc="2.0",id=Interlocked.Increment(ref counter).ToString(),method="aria2."+method,@params=pp});
    using(var r=await http.PostAsync("http://127.0.0.1:"+port+"/jsonrpc",new StringContent(json,Encoding.UTF8,"application/json"))) {
@@ -123,9 +129,11 @@ namespace AwrNext {
    }
   }
   public async Task<string> Add(DownloadJob j,int limit) {
+   if(j.Range&&j.Size>0&&(File.Exists(j.Part+".awrmap")||(j.EngineMode!="Compatibility"&&!File.Exists(j.Part+".aria2")))){j.Backend="Turbo";return turbo.Add(j);}
+   j.Backend="aria2";
    var opts=new Dictionary<string,object>{
     {"dir",j.WorkDir},{"out","payload.part"},{"continue","true"},{"allow-overwrite","false"},{"auto-file-renaming","false"},
-    {"split",j.Range?j.Connections.ToString():"1"},{"max-connection-per-server",j.Range?j.Connections.ToString():"1"},
+    {"split",j.Range?Math.Min(16,j.Connections).ToString():"1"},{"max-connection-per-server",j.Range?Math.Min(16,j.Connections).ToString():"1"},
     {"min-split-size","1M"},{"max-tries","0"},{"max-file-not-found","3"},{"retry-wait","4"},{"connect-timeout","15"},{"timeout","25"},
     {"max-resume-failure-tries","0"},{"user-agent",j.UserAgent},{"max-download-limit","0"},{"http-accept-gzip","false"}
    };
@@ -178,7 +186,7 @@ namespace AwrNext {
    Directory.CreateDirectory(folder);
    bool autoName=String.IsNullOrWhiteSpace(name);
    if(name=="")name=Uri.UnescapeDataString(Path.GetFileName(new Uri(url).AbsolutePath));
-   var j=new DownloadJob{NameFromServer=autoName,Url=url,Folder=Path.GetFullPath(folder),Name=Util.UniqueName(folder,name,State.Jobs),Connections=Math.Max(1,Math.Min(16,con)),ExpectedHash=hash.ToLowerInvariant(),Referer=referer,Cookie=cookie};
+   var j=new DownloadJob{NameFromServer=autoName,Url=url,Folder=Path.GetFullPath(folder),Name=Util.UniqueName(folder,name,State.Jobs),Connections=Math.Max(1,Math.Min(128,con)),ExpectedHash=hash.ToLowerInvariant(),Referer=referer,Cookie=cookie,EngineMode=State.Settings.EngineMode,LineMbps=State.Settings.LineMbps,SystemProxy=State.Settings.SystemProxy};
    State.Jobs.Add(j);Save();Notify();return j;
   }
   public async Task Tick(){
@@ -190,6 +198,7 @@ namespace AwrNext {
       var d=(Dictionary<string,object>)await Engine.Call("tellStatus",j.Gid);
       if(j.Status!="Downloading")continue;
       j.Done=Util.Num(d,"completedLength");j.Speed=Util.Num(d,"downloadSpeed");j.ActiveConnections=(int)Util.Num(d,"connections");
+      j.EngineNote=Util.Get(d,"engineNote");j.TargetConnections=(int)Util.Num(d,"targetConnections");j.PeakConnections=Math.Max(j.PeakConnections,(int)Util.Num(d,"peakConnections"));j.RetryCount=(int)Util.Num(d,"retryCount");
       var total=Util.Num(d,"totalLength");if(j.Size<0&&total>0)j.Size=total;
       var status=Util.Get(d,"status");
       if(status=="complete"){
@@ -222,7 +231,7 @@ namespace AwrNext {
     bool existing=File.Exists(j.Part)&&new FileInfo(j.Part).Length>0;
     if(existing){
      if(!p.Range)throw new Exception("Server does not support resuming. Use Restart for a clean download.");
-     if(!File.Exists(j.Part+".aria2"))throw new Exception("Resume map is missing. Use Restart; partial bytes were preserved.");
+     if(!File.Exists(j.Part+".aria2")&&!File.Exists(j.Part+".awrmap"))throw new Exception("Resume map is missing. Use Restart; partial bytes were preserved.");
      if(!Probe.Same(j,p))throw new Exception("Remote file changed or identity cannot be verified. Use Restart, or supply a trusted SHA-256.");
     }
     j.Size=p.Size;j.ETag=p.ETag;j.Modified=p.Modified;j.Range=p.Range;
@@ -252,7 +261,7 @@ namespace AwrNext {
     File.Move(j.Part,j.Target);
     j.Done=len;j.Size=len;j.Speed=0;j.Status="Complete";j.ReadyToFinalize=false;
     j.Message=j.ExpectedHash!=""?"SHA-256 matched the supplied reference.":"Size checked; SHA-256 calculated (no reference supplied).";
-    try{if(File.Exists(j.Part+".aria2"))File.Delete(j.Part+".aria2");Directory.Delete(j.WorkDir);}catch{}
+    try{if(File.Exists(j.Part+".aria2"))File.Delete(j.Part+".aria2");if(File.Exists(j.Part+".awrmap"))File.Delete(j.Part+".awrmap");Directory.Delete(j.WorkDir);}catch{}
     if(j.Gid!=""){try{await Engine.Call("removeDownloadResult",j.Gid);}catch{}j.Gid="";}
     Save();Notify();
    }catch(Exception e){j.Status="Error";j.Message=e.Message;j.Speed=0;Save();Notify();}
@@ -272,7 +281,7 @@ namespace AwrNext {
    if(j.Status=="Complete"||j.Status=="Verifying")return;
    await Pause(j);
    if(j.Gid!=""){try{await Engine.Call("forceRemove",j.Gid);}catch{}try{await Engine.Call("removeDownloadResult",j.Gid);}catch{}j.Gid="";}
-   if(File.Exists(j.Part))File.Delete(j.Part);if(File.Exists(j.Part+".aria2"))File.Delete(j.Part+".aria2");
+   if(File.Exists(j.Part))File.Delete(j.Part);if(File.Exists(j.Part+".aria2"))File.Delete(j.Part+".aria2");if(File.Exists(j.Part+".awrmap"))File.Delete(j.Part+".awrmap");
    j.Done=0;j.Size=-1;j.ETag="";j.Modified="";j.ActualHash="";j.ReadyToFinalize=false;Resume(j);
   }
   public async Task UpdateUrl(DownloadJob j,string url){
@@ -296,3 +305,4 @@ namespace AwrNext {
   }
  }
 }
+

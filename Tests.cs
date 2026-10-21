@@ -14,17 +14,17 @@ class Tests {
   if(!predicate())throw new Exception("Timeout: "+j.Status+" "+j.Message);
  }
  static async Task<Manager> New(string name){
-  var m=new Manager(Path.Combine(root,name,"state"));await m.Engine.Start("/usr/bin/aria2c",m.DataDir);m.State.Settings.Concurrent=1;await m.ApplySettings();return m;
+  var m=new Manager(Path.Combine(root,name,"state"));await m.Engine.Start("/usr/bin/aria2c",m.DataDir);m.State.Settings.Concurrent=1;m.State.Settings.EngineMode=Environment.GetEnvironmentVariable("AWR_TEST_MODE")??"Adaptive";await m.ApplySettings();return m;
  }
  static async Task MainAsync(){
-  Directory.CreateDirectory(root);Manager m=null;
+  root+="-"+(Environment.GetEnvironmentVariable("AWR_TEST_MODE")??"Adaptive");Directory.CreateDirectory(root);Manager m=null;
   try {
    m=await New("resume");m.State.Settings.LimitKiB=1024;await m.ApplySettings();
    string dir=Path.Combine(root,"files");Directory.CreateDirectory(dir);File.WriteAllText(Path.Combine(dir,"test.bin"),"KEEP");
    var j=m.Enqueue(url+"/data",dir,"test.bin",8,sha);
    await Until(m,j,()=>j.Done>524288);
    Check(j.ActiveConnections>1,"real parallel HTTP range connections");
-   await m.Pause(j);Check(j.Status=="Paused"&&File.Exists(j.Part+".aria2"),"pause writes resume map");
+   await m.Pause(j);Check(j.Status=="Paused"&&File.Exists(j.Part+(j.Backend=="Turbo"?".awrmap":".aria2")),"pause writes resume map");
    long saved=j.Done;await m.Close();
    m=await New("resume");j=m.State.Jobs.Single();
    Check(j.Status=="Paused"&&j.Done>=saved,"history and partial progress survive app restart");
@@ -54,7 +54,7 @@ class Tests {
    Check(j.Status=="Complete"&&Util.Hash(j.Target)==sha,"interrupted connection retries to exact final bytes");
    await m.Close();m=null;
    m=await New("missing-map");j=m.Enqueue(url+"/data",dir,"missing.bin",8,sha);await Until(m,j,()=>j.Done>524288);await m.Pause(j);await m.Close();m=null;
-   m=await New("missing-map");j=m.State.Jobs.Single();File.Delete(j.Part+".aria2");m.Resume(j);await Until(m,j,()=>j.Status=="Error");
+   m=await New("missing-map");j=m.State.Jobs.Single();File.Delete(j.Part+(j.Backend=="Turbo"?".awrmap":".aria2"));m.Resume(j);await Until(m,j,()=>j.Status=="Error");
    Check(j.Message.Contains("map is missing"),"missing resume map cannot produce false completion");
    await m.Close();m=null;
    m=await New("race");j=m.Enqueue(url+"/small",dir,"race.bin",2,small);await m.Tick();await m.Pause(j);await Task.Delay(500);
@@ -67,3 +67,4 @@ class Tests {
  }
  static int Main(){try{MainAsync().GetAwaiter().GetResult();return 0;}catch(Exception e){Console.Error.WriteLine(e);return 1;}}
 }
+
