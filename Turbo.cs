@@ -158,14 +158,14 @@ namespace AwrNext {
    try{
     while(!stop.IsCancellationRequested){
      var c=Claim(index);if(c==null){if(Finished())return;await Task.Delay(100,stop.Token);continue;}
-     int delay=0;
+     int delay=0;long before;lock(gate)before=c.Done;
      try{await ReadChunk(c);c.Failures=0;}
      catch(OperationCanceledException){if(stop.IsCancellationRequested)return;delay=1000;}
      catch(FatalTransferException e){Fail(e);return;}
      catch(Exception e){
       if(stop.IsCancellationRequested)return;
       var busy=e as ServerBusyException;
-      lock(gate){retries++;failuresSinceTune++;c.Failures++;
+      lock(gate){retries++;failuresSinceTune++;c.Failures=c.Done>before?0:c.Failures+1;
        if(busy!=null){desired=Math.Max(1,desired/2);notBefore=DateTime.UtcNow.AddSeconds(busy.Delay);note="Server requested backoff; reducing concurrency to "+desired+".";delay=busy.Delay*1000;}
        else{note="Retrying interrupted range from its last saved byte.";delay=Math.Min(10000,500*(1<<Math.Min(4,c.Failures)));}
       }

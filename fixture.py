@@ -23,7 +23,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
    b=json.dumps({"ranges":RANGES,"dropped":DROPPED}).encode();self.send_response(200);self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b);return
   if path=="/html":
    b=b"<html>login required</html>";self.send_response(200);self.send_header("Content-Type","text/html");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b);return
-  data=BIG if path in ("/benchmark","/adaptive","/many") else DATA if path not in ("/small","/bad") else DATA[:1048576]
+  data=BIG if path in ("/benchmark","/adaptive","/many") else DATA if path not in ("/small","/bad","/repeated") else DATA[:1048576]
   if path=="/mutable" and VERSION>1:data=bytes([5])*len(data)
   etag='"v%d"'%(VERSION if path=="/mutable" else 1)
   if self.headers.get("If-Match") not in (None,etag):
@@ -49,12 +49,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
   if rang:self.send_header("Content-Range","bytes %d-%d/%d"%(start+(1 if path=="/wrong" and end-start>0 else 0),end,len(data)))
   self.send_header("Content-Disposition",'attachment; filename="original.bin"')
   self.end_headers()
-  should_drop=path=="/drop" and end-start>1024 and not DROPPED
+  should_drop=(path=="/drop" and end-start>1024 and not DROPPED) or (path=="/repeated" and end-start>=65536)
   if should_drop:DROPPED=True
   try:
    for pos in range(start,end+1,65536):
     self.wfile.write(data[pos:min(pos+65536,end+1)]);self.wfile.flush()
-    if should_drop and pos-start>=262144:self.connection.shutdown(socket.SHUT_RDWR);self.connection.close();return
+    if should_drop and pos-start>=(0 if path=="/repeated" else 262144):self.connection.shutdown(socket.SHUT_RDWR);self.connection.close();return
     if end-start>1024:time.sleep((min(65536,end+1-pos)/(300*1024)) if path in ("/benchmark","/adaptive","/many") else .008)
   except (BrokenPipeError,ConnectionResetError,OSError):pass
 pathlib.Path("/vercel/awr/test-payload.sha256").write_text(hashlib.sha256(DATA).hexdigest())
